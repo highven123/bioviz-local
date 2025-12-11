@@ -49,13 +49,13 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install PyInstaller (Windows)
+      - name: Install PyInstaller and Cython (Windows)
         if: matrix.platform == 'windows-latest'
-        run: pip install pyinstaller openpyxl numpy scipy
+        run: pip install pyinstaller cython setuptools openpyxl numpy scipy
 
       - name: Install Python dependencies (macOS)
         if: matrix.platform == 'macos-latest'
-        run: pip3 install openpyxl numpy scipy
+        run: pip3 install cython setuptools openpyxl numpy scipy
 
       - name: Install frontend dependencies
         run: npm install

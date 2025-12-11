@@ -56,10 +56,45 @@ function getExtension(targetTriple) {
     return '';
 }
 
+
+/**
+ * Compile bio_core.py using Cython
+ */
+function buildCython() {
+    console.log('[build-python] Compiling core logic with Cython...');
+
+    // Install Cython if needed (best effort)
+    try {
+        // Just checking version to see if installed
+        execSync('cython --version', { stdio: 'ignore' });
+    } catch (e) {
+        console.log('[build-python] Cython not found, skipping compilation (using source fallback)');
+        return false;
+    }
+
+    try {
+        // Run setup.py build_ext --inplace
+        // This compiles bio_core.py -> bio_core.c -> bio_core.so (or .pyd)
+        execSync('python3 setup.py build_ext --inplace', {
+            cwd: PYTHON_DIR,
+            stdio: 'inherit'
+        });
+        console.log('[build-python] Cython compilation complete');
+        return true;
+    } catch (error) {
+        console.error('[build-python] Cython compilation failed:', error.message);
+        console.error('[build-python] Falling back to Python source interpretation');
+        return false;
+    }
+}
+
 /**
  * Run PyInstaller to build the Python engine
  */
 function buildPython() {
+    // 1. Try to compile with Cython first
+    buildCython();
+
     console.log('[build-python] Building Python engine with PyInstaller...');
 
     // Check if bio_engine.py exists
@@ -69,6 +104,8 @@ function buildPython() {
     }
 
     // Run PyInstaller
+    // Important: --hidden-import is often needed for dynamic imports, but here bio_core is imported directly
+    // PyInstaller should automatically pick up the .so/.pyd file if it exists next to the script
     try {
         execSync(
             `pyinstaller --onefile --name bio-engine --distpath "${PYTHON_DIR}/dist" "${PYTHON_ENTRY}"`,

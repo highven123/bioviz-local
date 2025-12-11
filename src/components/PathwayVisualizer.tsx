@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -42,12 +42,22 @@ interface PathwayVisualizerProps {
     title?: string;
     theme?: 'dark' | 'light';
     pathwayId?: string;
-    dataType?: 'gene' | 'protein' | 'cell';
+    dataType?: 'gene' | 'protein' | 'cell' | 'other';
     onNodeClick?: (geneName: string) => void;
     selectedNodeNames?: string[]; // New prop for highlighting
+    isPro?: boolean; // New prop for monetization tier
+    /** Base name of uploaded data file (without extension), used for export filenames */
+    sourceFileBase?: string;
 }
 
-export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
+export interface PathwayVisualizerRef {
+    resetView: () => void;
+    exportPNG: () => Promise<void>;
+    exportSVG: () => Promise<void>;
+    exportPPTX: () => Promise<void>;
+}
+
+export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisualizerProps>(({
     nodes,
     edges,
     title,
@@ -55,8 +65,10 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
     pathwayId,
     dataType = 'gene',
     onNodeClick,
-    selectedNodeNames = []
-}) => {
+    selectedNodeNames = [],
+    isPro = false,
+    sourceFileBase,
+}, ref) => {
     const isDark = theme === 'dark';
     const textColor = isDark ? '#eee' : '#333';
     const bgColor = isDark ? '#1a1a24' : '#ffffff';
@@ -150,15 +162,12 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
         const usedRelationsStringMap: Record<string, string> = {};
 
-        // Check if we have an active selection
-        const hasSelection = selectedNodeNames.length > 0;
-
         // Format nodes for ECharts
         const graphNodes = nodes.map(node => {
             // Determine if this node is selected
             // Use hit_name first (exact match), then name (split by comma)
             let isSelected = false;
-            if (hasSelection) {
+            if (selectedNodeNames.length > 0) {
                 if (node.hit_name && selectedNodeNames.includes(node.hit_name)) {
                     isSelected = true;
                 } else if (node.name) {
@@ -167,18 +176,15 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                         isSelected = true;
                     }
                 }
-            } else {
-                isSelected = true; // If no selection, everything is "active"
             }
 
             // Base symbol size (expression-based)
             const baseSize = 28 + (node.value ? Math.min(Math.abs(node.value) * 3, 12) : 0);
 
-            // Visual enhancement logic - size-based contrast, keep original colors
-            const symbolSize = hasSelection
-                ? (isSelected ? baseSize * 1.5 : baseSize * 0.7)  // Selected: bigger, unselected: smaller
-                : baseSize;
-            const opacity = hasSelection && !isSelected ? 0.3 : 1.0;  // Slightly transparent for unselected
+            // Visual enhancement logic:
+            // 点击选中的节点变大，其它节点保持原始大小和亮度
+            const symbolSize = isSelected ? baseSize * 1.5 : baseSize;
+            const opacity = 1.0;
             const borderColor = isDark ? '#fff' : '#333';
             const borderWidth = 1;
 
@@ -203,10 +209,12 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 },
                 label: {
                     show: true,
-                    formatter: (params: any) => params.name,
-                    color: hasSelection && !isSelected ? '#666' : getContrastColor(nodeColor),
-                    fontSize: isSelected && hasSelection ? 11 : 10,
-                    fontWeight: isSelected && hasSelection ? 'bold' : 'normal',
+                    formatter: (params: any) => {
+                        return params.name.replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim();
+                    },
+                    color: getContrastColor(nodeColor),
+                    fontSize: isSelected ? 11 : 10,
+                    fontWeight: isSelected ? 'bold' : 'normal',
                     position: 'inside',
                     width: 45,
                     overflow: 'break',
@@ -216,13 +224,19 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 value: node.expression,
                 tooltip: {
                     formatter: (params: any) => {
-                        const val = params.data.value;
+                        const val = params.data?.value;
                         const valStr = val !== undefined && val !== null ? val.toFixed(3) : 'N/A';
+
+                        const rawId = params.data?.id;
+                        const idIsString = typeof rawId === 'string';
+                        const showId = idIsString && !rawId.toLowerCase().startsWith('hsa');
+                        const idLine = showId ? `ID: ${rawId}<br/>` : '';
+
                         return `
             <div style="text-align: left;">
               <b>${params.name}</b><br/>
               Expression (LogFC): ${valStr}<br/>
-              ID: ${params.data.id}
+              ${idLine}
             </div>
           `;
                     }
@@ -234,24 +248,6 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
         const graphLinks = edges.map(edge => {
             const sourceNode = nodeMap.get(edge.source);
             const targetNode = nodeMap.get(edge.target);
-
-            // Check visibility based on selection
-            let isSourceSelected = true;
-            let isTargetSelected = true;
-
-            if (hasSelection) {
-                const checkNode = (n: PathwayNode | undefined) => {
-                    if (!n) return false;
-                    if (n.hit_name && selectedNodeNames.includes(n.hit_name)) return true;
-                    const parts = n.name.split(',').map(s => s.trim());
-                    return parts.some(p => selectedNodeNames.includes(p));
-                };
-                isSourceSelected = checkNode(sourceNode);
-                isTargetSelected = checkNode(targetNode);
-            }
-
-            const isEdgeDimmed = hasSelection && (!isSourceSelected || !isTargetSelected);
-            const edgeOpacity = isEdgeDimmed ? 0.1 : 1; // Very faint if not relevant
 
             const isRelevant = (sourceNode?.value !== undefined && sourceNode.value !== null) ||
                 (targetNode?.value !== undefined && targetNode.value !== null);
@@ -265,17 +261,17 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 source: edge.source,
                 target: edge.target,
                 label: {
-                    show: !!edge.relation && !isEdgeDimmed, // Hide label if dimmed
+                    show: !!edge.relation,
                     formatter: edge.relation,
                     fontSize: 10,
                     color: isRelevant ? color : '#777',
-                    opacity: edgeOpacity
+                    opacity: 1
                 },
                 lineStyle: {
                     curveness: 0.2,
                     color: isRelevant ? color : '#444',
                     width: isRelevant ? 2.5 : 1,
-                    opacity: isEdgeDimmed ? 0.1 : (isRelevant ? 1 : 0.4)
+                    opacity: isRelevant ? 1 : 0.4
                 },
                 symbol: ['none', 'arrow'],
                 symbolSize: isRelevant ? 10 : 6
@@ -372,10 +368,58 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             ]
         });
 
+        // Add Stats Overlay (Top-Left)
+        // Recalculate stats for the current view
+        const totalNodes = nodes.length;
+        const upRegulated = nodes.filter(n => n.expression !== undefined && n.expression !== null && n.expression > 0).length;
+        const downRegulated = nodes.filter(n => n.expression !== undefined && n.expression !== null && n.expression < 0).length;
+        const entityLabel = getTerm(dataType, 'entity');
+        // Pluralize simply (can be improved if needed)
+        const entityPlural = entityLabel.endsWith('y') ? entityLabel.slice(0, -1) + 'ies' : entityLabel + 's';
+
+        legendGraphic.push({
+            type: 'group',
+            left: 20,
+            top: 60, // Move down to avoid overlapping with title/header area if needed, as requested "put it down a bit"
+            children: [
+                {
+                    type: 'text',
+                    left: 0,
+                    top: 0,
+                    style: {
+                        text: `${totalNodes} ${entityPlural.toLowerCase()}`,
+                        fill: textColor,
+                        font: 'bold 14px sans-serif'
+                    }
+                },
+                {
+                    type: 'text',
+                    left: 0,
+                    top: 20,
+                    style: {
+                        text: `${upRegulated} up`,
+                        fill: '#ef4444', // Red
+                        font: 'bold 14px sans-serif'
+                    }
+                },
+                {
+                    type: 'text',
+                    left: 0,
+                    top: 40,
+                    style: {
+                        text: `${downRegulated} down`,
+                        fill: '#3b82f6', // Blue
+                        font: 'bold 14px sans-serif'
+                    }
+                }
+            ]
+        });
+
         return {
             backgroundColor: 'transparent',
             title: {
-                text: title || 'Pathway Visualization',
+                // Remove KEGG ID style patterns (e.g. hsa04110) from title if present
+                text: (title || 'Pathway Visualization').replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim(),
                 left: 'center',
                 textStyle: {
                     color: textColor,
@@ -390,7 +434,7 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                     color: textColor
                 }
             },
-            graphic: legendGraphic, // Add custom legend
+            graphic: legendGraphic,
             series: [
                 {
                     type: 'graph',
@@ -419,16 +463,61 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
         }
     };
 
-    const handleExportSVG = async () => {
+    const handleExportPNG = async () => {
         const chart = chartRef.current?.getEchartsInstance();
         if (!chart) return;
 
         try {
-            // Use publication-ready dark background for SVG export
+            const imgUrl = chart.getDataURL({
+                type: 'png',
+                pixelRatio: 2,
+                backgroundColor: '#000000',
+                excludeComponents: ['toolbox']
+            });
+
+            // Convert Base64 directly to Uint8Array for binary write
+            const blob = await fetch(imgUrl).then(res => res.blob());
+            const buffer = await blob.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+
+            const base = (sourceFileBase && sourceFileBase.trim()) || 'analysis';
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+            const suggestedName = `png_${base}_${timestamp}.png`;
+
+            const filePath = await save({
+                defaultPath: suggestedName,
+                filters: [{
+                    name: 'PNG Image',
+                    extensions: ['png']
+                }]
+            });
+
+            if (filePath) {
+                await writeFile(filePath, bytes);
+                alert('PNG exported successfully!');
+            }
+        } catch (err) {
+            console.error('Export PNG failed:', err);
+            alert(`Export PNG failed: ${err}`);
+        }
+    };
+
+    const handleExportSVG = async () => {
+        if (!isPro) {
+            alert("SVG (Vector) Export is a Pro feature.\n\nPlease upgrade to BioViz Pro to unlock vector graphics, editable reports, and data saving.");
+            return;
+        }
+
+        const chart = chartRef.current?.getEchartsInstance();
+        if (!chart) return;
+
+        try {
+            // Use clean dark background for SVG export，并去掉工具栏
             const svgUrl = chart.getDataURL({
                 type: 'svg',
                 pixelRatio: 2,
-                backgroundColor: '#0f172a' // Dark slate background for publication
+                backgroundColor: '#000000',
+                excludeComponents: ['toolbox']
             });
 
             let svgContent: string;
@@ -447,7 +536,41 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 svgContent = decodeURIComponent(data); // Try decoding anyway
             }
 
-            const suggestedName = `pathway-${title || 'viz'}-${Date.now()}.svg`;
+            // 在 SVG 中追加水印
+            let finalSvg = svgContent;
+
+            // 1. Professional Footer (Always present, subtle)
+            const footerWatermark = '<text x="98%" y="98%" text-anchor="end" fill="#94a3b8" font-family="sans-serif" font-size="12">Generated by BioViz Local</text>';
+
+            // 2. Tiled Watermark (Free Tier Only)
+            let patternDef = '';
+            let patternRect = '';
+
+            if (!isPro) {
+                // Diagonal "BioViz Free" pattern
+                const patternId = "watermark-pattern";
+                patternDef = `
+                <defs>
+                    <pattern id="${patternId}" width="200" height="200" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <text x="100" y="100" text-anchor="middle" fill="rgba(150, 150, 150, 0.15)" font-size="24" font-family="sans-serif" font-weight="bold">BioViz Free</text>
+                    </pattern>
+                </defs>`;
+                // A rect covering the whole SVG causing the pattern to repeat
+                // Ensure it's on top by placing it just before end of svg
+                patternRect = `<rect width="100%" height="100%" fill="url(#${patternId})" pointer-events="none"/>`;
+            }
+
+            if (svgContent.includes('</svg>')) {
+                // Insert defs after <svg> start tag usually, but ECharts svg output might be complex. 
+                // Safest is to prepend defs to the first content or just put it before closing if valid SVG.
+                // Actually, defs should be at the top usually, but can be anywhere.
+                // Let's replace closing tag with our additions.
+                finalSvg = svgContent.replace('</svg>', `${patternDef}${patternRect}${footerWatermark}</svg>`);
+            }
+
+            const base = (sourceFileBase && sourceFileBase.trim()) || 'analysis';
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+            const suggestedName = `svg_${base}_${timestamp}.svg`;
 
             const filePath = await save({
                 defaultPath: suggestedName,
@@ -458,7 +581,7 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             });
 
             if (filePath) {
-                await writeTextFile(filePath, svgContent);
+                await writeTextFile(filePath, finalSvg);
                 alert('SVG exported successfully!');
             }
         } catch (err) {
@@ -550,6 +673,18 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             const subTitleStyle = { x: 0.5, y: 3.5, w: 9, fontSize: 16, color: 'AAAAAA', align: 'center' as const };
             const sectionTitleStyle = { x: 0.5, y: 0.4, w: 9, fontSize: 24, bold: true, color: 'FFFFFF' };
 
+            // 统一的联系方式（轻量“水印”），放在每页右下角
+            const contactText = 'BioViz Local • bioviz@bioviz.com';
+            const contactOptions = {
+                // 右下角，预留出页码的位置
+                x: 6.5,
+                y: 5.1,
+                w: 3.0,
+                fontSize: 10,
+                color: '666666',
+                align: 'right' as const
+            };
+
             // --- SLIDE 1: Title Slide ---
             const titleSlide = pptx.addSlide({ masterName: 'DARK_THEME' }); // Renamed slide1 to titleSlide for clarity
             titleSlide.addText('BioViz Local', { ...titleStyle, y: 2.5, fontSize: 36, color: '5DADE2' });
@@ -557,6 +692,16 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             titleSlide.addText('Pathway ID: ' + (pathwayId || 'Unknown'), { x: 0.5, y: 3.9, w: 9, fontSize: 18, color: accentColor, align: 'center' }); // Adjusted y
             titleSlide.addText('Generated: ' + new Date().toLocaleString(), { ...subTitleStyle, y: 4.5 }); // Adjusted y
             titleSlide.addText('Generated by BioViz Local', { x: 0.5, y: 5.0, w: 9, fontSize: 14, color: '#666666', align: 'center' });
+            // Watermark for Title Slide (if Free)
+            if (!isPro) {
+                titleSlide.addText('TRIAL VERSION - BioViz Free', {
+                    x: 0, y: 0, w: '100%', h: '100%',
+                    fontSize: 60, color: 'ffffff', transparency: 90,
+                    rotate: 45, align: 'center', valign: 'middle'
+                });
+            }
+            // 每页右上角联系方式
+            titleSlide.addText(contactText, contactOptions);
 
 
             // --- SLIDE 2: Methodology (New "Research" Requirement) ---
@@ -569,6 +714,7 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 { text: 'BioViz Local v0.1', options: { fontSize: 18, color: accentColor, bold: true } },
                 { text: '.', options: { fontSize: 18, color: bodyColor } }
             ], { x: 1.0, y: 1.5, w: 8.0, h: 3.0, lineSpacing: 30 });
+            methodSlide.addText(contactText, contactOptions);
 
             // --- SLIDE 3: Pathway Visualization ---
             const slide2 = pptx.addSlide({ masterName: 'DARK_THEME' });
@@ -576,12 +722,22 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             if (imgUrl && imgUrl.length > 100) {
                 slide2.addImage({
                     data: imgUrl,
-                    x: 0.2, y: 1.0, w: 9.6, h: 4.5,
-                    sizing: { type: 'contain', w: 9.6, h: 4.5 }
+                    // 使用近似正方形区域承载路径图，视觉更紧凑
+                    x: 2.75,          // (10 - 4.5) / 2  居中
+                    y: 1.0,
+                    w: 4.5,
+                    h: 4.5,
+                    sizing: { type: 'contain', w: 4.5, h: 4.5 }
                 });
+
+                if (isPro) {
+                    // Start of professional/vector feature (placeholder for now)
+                    // e.g. slide2.addText('Editable Vector Mode', { ... }); 
+                }
             } else {
                 slide2.addText("Image capture failed. Please ensure the chart is fully visible.", { x: 0.5, y: 2.0, color: 'FF0000', align: 'center' });
             }
+            slide2.addText(contactText, contactOptions);
 
             // --- SLIDE 4: Summary Statistics ---
             const slide3 = pptx.addSlide({ masterName: 'DARK_THEME' });
@@ -609,6 +765,7 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                     { text: ((downRegulated / totalNodes) * 100).toFixed(1) + '%', options: { fill: { color: '2d2d3a' }, color: '#4ecdc4' } }
                 ]
             ], { x: 1.5, y: 1.5, w: 7.0 });
+            slide3.addText(contactText, contactOptions);
 
             // --- SLIDE 5: Key Findings ---
             const slide4 = pptx.addSlide({ masterName: 'DARK_THEME' });
@@ -620,53 +777,62 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
                 'Pathway Coverage: ' + (100 * nodes.filter(n => n.expression !== undefined && n.expression !== null).length / nodes.length).toFixed(1) + '% of total pathway nodes.'
             ];
             slide4.addText(findings.join('\n\n'), { x: 1.0, y: 1.5, w: 8.0, h: 3.5, fontSize: 16, color: bodyColor, bullet: true, lineSpacing: 40 });
+            slide4.addText(contactText, contactOptions);
 
             // --- SLIDE 6: Gene Expression Details (Zebra Striped) ---
             const slide5 = pptx.addSlide({ masterName: 'DARK_THEME' });
             slide5.addText(getTerm(dataType, 'value') + ' Details', sectionTitleStyle);
 
+            // 仅展示 Top 20，保证一页内表格整齐、不会溢出
             const sortedNodes = [...nodes]
                 .filter(n => n.expression !== undefined && n.expression !== null)
                 .sort((a, b) => Math.abs(b.expression || 0) - Math.abs(a.expression || 0))
-                .slice(0, 40);
-
-            const tableData = [
-                [
-                    { text: getTerm(dataType, 'entity'), options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
-                    { text: getTerm(dataType, 'value'), options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
-                    { text: 'Status', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } }
-                ],
-                ...sortedNodes.map((n, i) => {
-                    // Zebra striping: Alternate row colors
-                    const rowBg = i % 2 === 0 ? '2d2d3a' : '1a1a24'; // Dark alternate
-                    const val = n.expression || 0;
-                    return [
-                        { text: n.name, options: { fill: { color: rowBg }, color: bodyColor } },
-                        { text: val.toFixed(2), options: { fill: { color: rowBg }, color: val > 0 ? '#ff6b6b' : '#4ecdc4' } },
-                        { text: val > 0 ? 'High' : 'Low', options: { fill: { color: rowBg }, color: val > 0 ? '#ff6b6b' : '#4ecdc4' } }
-                    ];
-                })
-            ];
+                .slice(0, 20);
 
             if (sortedNodes.length > 0) {
-                slide5.addTable(tableData, { x: 0.5, y: 1.2, w: 9.0, autoPage: true, margin: 0.5, fontSize: 12 });
+                const tableData = [
+                    [
+                        { text: getTerm(dataType, 'entity'), options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: getTerm(dataType, 'value'), options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: 'Status', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } }
+                    ],
+                    ...sortedNodes.map((n, i) => {
+                        const rowBg = i % 2 === 0 ? '2d2d3a' : '1a1a24';
+                        const val = n.expression || 0;
+                        return [
+                            { text: n.name, options: { fill: { color: rowBg }, color: bodyColor } },
+                            { text: val.toFixed(2), options: { fill: { color: rowBg }, color: val > 0 ? '#ff6b6b' : '#4ecdc4' } },
+                            { text: val > 0 ? 'High' : 'Low', options: { fill: { color: rowBg }, color: val > 0 ? '#ff6b6b' : '#4ecdc4' } }
+                        ];
+                    })
+                ];
+
+                slide5.addTable(tableData, {
+                    x: 0.75,
+                    y: 1.3,
+                    w: 8.5,
+                    fontSize: 11
+                });
             } else {
                 slide5.addText("No mapping data available.", { x: 3, y: 3, color: 'FFFFFF' });
             }
+            slide5.addText(contactText, contactOptions);
 
             // --- LAST SLIDE: References ---
             const refSlide = pptx.addSlide({ masterName: 'DARK_THEME' });
             refSlide.addText('References & Acknowledgements', sectionTitleStyle);
 
             refSlide.addText([
-                { text: '1. Kanehisa, M. and Goto, S.; KEGG: Kyoto Encyclopedia of Genes and Genomes. Nucleic Acids Res. 28, 27-30 (2000).', options: { fontSize: 14, color: bodyColor, breakLine: true } },
-                { text: '2. BioViz Local: An advanced, secure, and beautiful pathway visualization tool.', options: { fontSize: 14, color: bodyColor, breakLine: true } },
-                { text: '\n\nGitHub Repository:', options: { fontSize: 14, color: accentColor, bold: true, breakLine: true } },
-                { text: 'https://github.com/bioviz/local', options: { fontSize: 14, color: '#4ecdc4', underline: { style: 'sng' }, hyperlink: { url: 'https://github.com/bioviz/local' } } }
+                // { text: '1. Kanehisa, M. and Goto, S.; KEGG: Kyoto Encyclopedia of Genes and Genomes. Nucleic Acids Res. 28, 27-30 (2000).', options: { fontSize: 14, color: bodyColor, breakLine: true } },
+                { text: '1. BioViz Local: An advanced, secure, and beautiful pathway visualization tool.', options: { fontSize: 14, color: bodyColor, breakLine: true } },
+                { text: '\n\nOfficial Website:', options: { fontSize: 14, color: accentColor, bold: true, breakLine: true } },
+                { text: 'https://www.bioviz.com', options: { fontSize: 14, color: '#4ecdc4', underline: { style: 'sng' }, hyperlink: { url: 'https://www.bioviz.com' } } }
             ], { x: 1.0, y: 1.5, w: 8.0, h: 4.0, lineSpacing: 25 });
+            refSlide.addText(contactText, contactOptions);
             // Save
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const suggestedName = 'pathway-report-' + (title || 'viz') + '-' + timestamp + '.pptx';
+            const base = (sourceFileBase && sourceFileBase.trim()) || 'analysis';
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+            const suggestedName = `report_${base}_${timestamp}.pptx`;
 
             const pptxData = await pptx.write({ outputType: 'base64' }) as string;
             const binaryString = atob(pptxData);
@@ -691,6 +857,14 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
         }
     };
 
+    // Expose methods to parent via ref
+    useImperativeHandle(ref, () => ({
+        resetView: handleResetView,
+        exportPNG: handleExportPNG,
+        exportSVG: handleExportSVG,
+        exportPPTX: handleExportPPTX
+    }));
+
     return (
         <div className="pathway-visualizer" style={{
             height: '600px',
@@ -701,25 +875,7 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             border: '1px solid var(--color-border)',
             position: 'relative'
         }}>
-            {/* Toolbar */}
-            <div style={{
-                position: 'absolute',
-                top: '16px',
-                right: '16px',
-                zIndex: 1000,
-                display: 'flex',
-                gap: '8px'
-            }}>
-                <button onClick={handleResetView} className="viz-tool-btn" title="Reset View">
-                    🔄 Reset
-                </button>
-                <button onClick={handleExportSVG} className="viz-tool-btn svg" title="Export as SVG">
-                    📥 SVG
-                </button>
-                <button onClick={handleExportPPTX} className="viz-tool-btn pptx" title="Export as PowerPoint">
-                    📊 PPTX
-                </button>
-            </div>
+            {/* Toolbar Removed - Moved to Parent Header */}
 
             <ReactECharts
                 ref={chartRef}
@@ -730,4 +886,6 @@ export const PathwayVisualizer: React.FC<PathwayVisualizerProps> = ({
             />
         </div>
     );
-};
+});
+
+PathwayVisualizer.displayName = 'PathwayVisualizer';

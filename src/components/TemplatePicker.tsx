@@ -46,7 +46,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ onSelect, disabl
 
   return (
     <div className="template-picker">
-      <h3>📊 Select KEGG Pathway Template</h3>
+      <h3>📊 Select Pathway Template</h3>
       <p className="template-picker-hint">
         Choose a pre-built pathway to visualize your gene expression data
       </p>
@@ -61,7 +61,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ onSelect, disabl
             <div className="template-icon">{template.icon}</div>
             <div className="template-info">
               <h4>{template.name}</h4>
-              <p className="template-id">{template.id}</p>
+              {/* <p className="template-id">{template.id}</p> */}
               <p className="template-description">{template.description}</p>
             </div>
             {selectedId === template.id && (

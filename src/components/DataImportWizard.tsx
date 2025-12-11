@@ -6,6 +6,8 @@ import './DataImportWizard.css'; // New CSS file
 
 // --- Types ---
 
+export type AnalysisMethod = 'auto' | 'ttest' | 'precomputed';
+
 export interface AnalysisConfig {
     filePath: string;
     mapping: {
@@ -15,7 +17,8 @@ export interface AnalysisConfig {
     };
     pathwayId: string;
     dataType: 'gene' | 'protein' | 'cell';
-    analysisMethod: 'auto' | 'ttest' | 'precomputed';
+    /** Statistical methods to apply (multi-select). The first one is used for visualization. */
+    analysisMethods: AnalysisMethod[];
 }
 
 interface DataImportWizardProps {
@@ -126,7 +129,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             mapping,
             pathwayId,
             dataType: fileInfo.dataType,
-            analysisMethod
+            analysisMethods,
         };
         onConfigPreview?.(cfg);
     };
@@ -149,15 +152,30 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     const [selectedGeneCol, setSelectedGeneCol] = useState('');
     const [selectedValueCol, setSelectedValueCol] = useState('');
     const [selectedPValueCol, setSelectedPValueCol] = useState('');
-    const [analysisMethod, setAnalysisMethod] = useState<'auto' | 'ttest' | 'precomputed'>('auto');
+    const [analysisMethods, setAnalysisMethods] = useState<AnalysisMethod[]>(['auto']);
 
     useEffect(() => {
         if (step === 2 && fileInfo) {
             setSelectedGeneCol(fileInfo.suggestedMapping.gene || '');
             setSelectedValueCol(fileInfo.suggestedMapping.value || '');
             setSelectedPValueCol(fileInfo.suggestedMapping.pvalue || '');
+
+            // Restore analysis methods from last config if the same file is reused
+            if (lastConfig && lastConfig.filePath === fileInfo.path && Array.isArray(lastConfig.analysisMethods)) {
+                setAnalysisMethods(lastConfig.analysisMethods.length > 0 ? lastConfig.analysisMethods : ['auto']);
+            }
         }
-    }, [step, fileInfo]);
+    }, [step, fileInfo, lastConfig]);
+
+    const toggleAnalysisMethod = (method: AnalysisMethod) => {
+        setAnalysisMethods(prev => {
+            const exists = prev.includes(method);
+            const next = exists ? prev.filter(m => m !== method) : [...prev, method];
+            // Always keep at least one method selected; fallback to 'auto'
+            if (next.length === 0) return ['auto'];
+            return next;
+        });
+    };
 
     const handleMappingConfirm = () => {
         if (!selectedGeneCol || !selectedValueCol) return;
@@ -186,7 +204,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             mapping: mapping,
             pathwayId: selectedPathway,
             dataType: fileInfo.dataType,
-            analysisMethod
+            analysisMethods,
         };
 
         onConfigPreview?.(config);
@@ -326,24 +344,39 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             );
                         })()}
 
-                        {/* Analysis Method Selector */}
+                        {/* Analysis Method Selector (multi-select) */}
                         <div className="mapping-card">
                             <label className="mapping-label">
-                                <span>⚙️ Analysis Method</span>
+                                <span>⚙️ Analysis Methods</span>
                             </label>
-                            <select
-                                value={analysisMethod}
-                                onChange={e => setAnalysisMethod(e.target.value as any)}
-                                className="select-input"
-                            >
-                                <option value="auto">Auto (recommended)</option>
-                                <option value="precomputed">Use existing Log2FC / P-Value</option>
-                                <option value="ttest">Two-group t-test (Ctrl vs Exp)</option>
-                            </select>
+                            <div className="analysis-methods-group">
+                                <label className="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        checked={analysisMethods.includes('auto')}
+                                        onChange={() => toggleAnalysisMethod('auto')}
+                                    />
+                                    <span>Auto (recommended)</span>
+                                </label>
+                                <label className="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        checked={analysisMethods.includes('precomputed')}
+                                        onChange={() => toggleAnalysisMethod('precomputed')}
+                                    />
+                                    <span>Use existing Log2FC / P-Value</span>
+                                </label>
+                                <label className="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        checked={analysisMethods.includes('ttest')}
+                                        onChange={() => toggleAnalysisMethod('ttest')}
+                                    />
+                                    <span>Two-group t-test (Ctrl vs Exp)</span>
+                                </label>
+                            </div>
                             <p className="mapping-hint">
-                                Auto will use existing statistics when available; otherwise it
-                                computes Log2FC and p-values from detected control / experiment
-                                replicates.
+                                可以勾选一个或多个统计方法；当前通路可视化仍使用第一个方法作为主结果。
                             </p>
                         </div>
 

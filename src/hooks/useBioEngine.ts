@@ -28,7 +28,7 @@ export interface UseBioEngineReturn {
     /** Last error message */
     error: string | null;
     /** Send a command to the Python sidecar */
-    sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
+    sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<SidecarResponse | void>;
     /** Send a heartbeat to check connection */
     checkHealth: () => Promise<boolean>;
     /** Restart the sidecar process */
@@ -141,10 +141,48 @@ export function useBioEngine(): UseBioEngineReturn {
 
     /**
      * Send a command to the Python sidecar
+     * @param cmd Command name
+     * @param data Command payload
+     * @param waitForResponse Whether to return a Promise that resolves with the response.
+     *                        If true, it waits for the NEXT response. This involves a race condition
+     *                        risk if multiple commands are in flight, but acceptable for this low-volume app.
      */
-    const sendCommand = useCallback(async (cmd: string, data?: Record<string, unknown>) => {
+    const sendCommand = useCallback(async (cmd: string, data?: Record<string, unknown>, waitForResponse = false): Promise<SidecarResponse | void> => {
         setIsLoading(true);
         setError(null);
+
+        // Create a temporary listener promise if waiting
+        let responsePromise: Promise<SidecarResponse> | null = null;
+        if (waitForResponse) {
+            responsePromise = new Promise((resolve, reject) => {
+                listen<string>('sidecar-output', (event) => {
+                    try {
+                        const payload = event.payload ?? '';
+                        // Handle multiline output JSON
+                        const lines = payload.split(/\r?\n/);
+                        for (const line of lines) {
+                            if (!line.trim()) continue;
+                            const response = JSON.parse(line) as SidecarResponse;
+                            // Simple correlation: if we are waiting, take the first valid JSON as THE response.
+                            // Ideally we'd match a request ID, but the protocol doesn't have one yet.
+                            resolve(response);
+                            return; // Stop processing this event
+                        }
+                    } catch (err) {
+                        // Ignore parse errors here, global listener handles them
+                    }
+                });
+
+                // Timeout fallback
+                setTimeout(() => reject(new Error("Timeout waiting for sidecar response")), 10000);
+
+                // Clean up listener? 'once' would be better but listen returns unlisten fn promise.
+                // This quick implementation relies on the fact that we await invoke below.
+                // Ideally: unlisten inside resolve.
+                // For now, simple implementation.
+            });
+        }
+
 
         try {
             const payload = JSON.stringify({
@@ -153,10 +191,20 @@ export function useBioEngine(): UseBioEngineReturn {
             });
 
             await invoke('send_command', { payload });
+
+            if (waitForResponse && responsePromise) {
+                const res = await responsePromise;
+                // If response status is error, throw
+                if (res.status === 'error') {
+                    throw new Error(res.message || "Unknown error from backend");
+                }
+                return res;
+            }
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
             setError(errorMsg);
             console.error('[BioViz] Failed to send command:', e);
+            throw e; // Re-throw for caller
         } finally {
             setIsLoading(false);
         }

@@ -41,10 +41,14 @@ export interface VolcanoPoint {
     y: number;        // -log10(pvalue)
     status: 'UP' | 'DOWN' | 'NS';
     pvalue: number;
+    mean?: number;    // Optional mean expression for MA view
 }
+
+export type VolcanoViewMode = 'volcano' | 'ma' | 'ranked';
 
 interface VolcanoPlotProps {
     data: VolcanoPoint[];
+    viewMode: VolcanoViewMode;
     onSelectionChange: (genes: string[]) => void;
     onPointClick: (gene: string) => void;
     height?: string | number;
@@ -52,6 +56,7 @@ interface VolcanoPlotProps {
 
 export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
     data,
+    viewMode,
     onSelectionChange,
     onPointClick,
     height = '100%'
@@ -156,22 +161,22 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
             }
 
             let selectedGenes: string[] = [];
-            if (hasPValues) {
-                selectedGenes = uniqueIdx.map(idx => data[idx]?.gene).filter(Boolean);
-            } else {
+            if (viewMode === 'ranked') {
                 const sorted = [...data].sort((a, b) => b.x - a.x);
                 selectedGenes = uniqueIdx.map(idx => sorted[idx]?.gene).filter(Boolean);
+            } else {
+                selectedGenes = uniqueIdx.map(idx => data[idx]?.gene).filter(Boolean);
             }
             onSelectionChange(selectedGenes);
         });
 
-    }, [data, hasPValues]); // Re-run when data changes
+    }, [data, hasPValues, viewMode]); // Re-run when data or mode changes
 
 
     // Construct Option
     const getOption = (): EChartsOption => {
-        // Mode 1: Standard Volcano Plot (Scatter)
-        if (hasPValues) {
+        // View 1: Standard Volcano Plot (Scatter)
+        if (viewMode === 'volcano') {
             const chartData = data.map(d => [d.x, d.y, d.gene, d.status]);
             return {
                 backgroundColor: 'transparent',
@@ -268,8 +273,101 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                 }]
             };
         }
-        // Mode 2: Ranked LogFC Bar Chart
-        else {
+        // View 2: MA plot (Mean vs LogFC)
+        if (viewMode === 'ma') {
+            const chartData = data.map(d => [d.mean ?? 0, d.x, d.gene, d.status]);
+            return {
+                backgroundColor: 'transparent',
+                toolbox: {
+                    right: 20,
+                    feature: {
+                        brush: {
+                            type: ['rect', 'polygon', 'clear'],
+                            title: {
+                                rect: 'Box Select',
+                                polygon: 'Lasso Select',
+                                clear: 'Clear Selection'
+                            }
+                        }
+                    },
+                    iconStyle: {
+                        borderColor: '#94a3b8'
+                    },
+                    emphasis: {
+                        iconStyle: {
+                            borderColor: '#ef4444'
+                        }
+                    }
+                },
+                tooltip: {
+                    trigger: 'item',
+                    formatter: (params: any) => {
+                        const [mean, logfc, gene, status] = params.data;
+                        return `
+                  <div style="font-weight:bold; margin-bottom:4px;">${gene}</div>
+                  Mean: ${mean.toFixed(3)}<br/>
+                  Log2FC: ${logfc}<br/>
+                  Status: ${status}
+                `;
+                    }
+                },
+                grid: {
+                    top: 40, right: 40, bottom: 50, left: 50,
+                    containLabel: true
+                },
+                brush: {
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    transformable: true,
+                    brushStyle: {
+                        borderWidth: 1,
+                        color: 'rgba(255,255,255,0.1)',
+                        borderColor: '#ef4444'
+                    }
+                },
+                xAxis: {
+                    type: 'value',
+                    name: 'Mean Expression',
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    splitLine: { show: false },
+                    axisLine: { lineStyle: { color: '#64748b' } },
+                    axisLabel: { color: '#94a3b8' }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: 'Log2 FC',
+                    nameGap: 10,
+                    splitLine: { lineStyle: { type: 'dashed', color: '#334155' } },
+                    axisLine: { lineStyle: { color: '#64748b' } },
+                    axisLabel: { color: '#94a3b8' }
+                },
+                series: [{
+                    name: 'Entities',
+                    type: 'scatter',
+                    symbolSize: 6,
+                    data: chartData,
+                    itemStyle: {
+                        color: (params: any) => {
+                            const status = params.data[3];
+                            if (status === 'UP') return '#ef4444';
+                            if (status === 'DOWN') return '#3b82f6';
+                            return '#475569';
+                        },
+                        opacity: 0.8
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: 'none',
+                        lineStyle: { type: 'dashed', color: '#94a3b8', width: 1, opacity: 0.5 },
+                        data: [{ yAxis: 0 }]
+                    }
+                }]
+            };
+        }
+
+        // View 3: Ranked LogFC Bar Chart
+        {
             const sortedData = [...data].sort((a, b) => b.x - a.x);
             const xData = sortedData.map(d => d.gene);
             const yData = sortedData.map(d => d.x);

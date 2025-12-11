@@ -37,15 +37,16 @@ export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, 
             alignItems: 'center',
             justifyContent: 'center',
             width: '100%',
-            marginBottom: '16px'
+            marginBottom: '8px', // Reduced margin
+            marginTop: '8px'     // Optional: ensure tight top spacing
         }}>
             <div style={{
                 background: 'var(--bg-panel)',
                 border: '1px solid var(--border-subtle)',
-                borderRadius: '16px',
-                padding: '24px',
+                borderRadius: '12px', // Slightly smaller radius
+                padding: '12px 24px', // Reduced vertical padding
                 width: '100%',
-                maxWidth: '900px',
+                maxWidth: '800px',    // Slightly smaller max width
                 display: 'flex',
                 justifyContent: 'space-between',
                 position: 'relative',
@@ -65,7 +66,7 @@ export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, 
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                gap: '8px',
+                                gap: '6px', // Reduced gap
                                 position: 'relative',
                                 zIndex: 2,
                                 flex: 1,
@@ -75,17 +76,17 @@ export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, 
                         >
                             {/* Circle */}
                             <div style={{
-                                width: '48px',
-                                height: '48px',
+                                width: '32px', // Smaller circle
+                                height: '32px',
                                 borderRadius: '50%',
-                                background: isCompleted || isCurrent ? '#10b981' : '#374151', /* Green if active/done */
+                                background: isCompleted || isCurrent ? '#10b981' : '#374151',
                                 color: '#ffffff',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 fontWeight: 600,
-                                fontSize: '18px',
-                                boxShadow: isCurrent ? '0 0 15px rgba(16, 185, 129, 0.4)' : 'none',
+                                fontSize: '14px', // Smaller font
+                                boxShadow: isCurrent ? '0 0 10px rgba(16, 185, 129, 0.4)' : 'none',
                                 transition: 'all 0.3s ease'
                             }}>
                                 {stepNum}
@@ -93,7 +94,7 @@ export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, 
 
                             {/* Label */}
                             <span style={{
-                                fontSize: '14px',
+                                fontSize: '12px', // Smaller label
                                 color: '#d1d5db',
                                 fontWeight: isCurrent ? 600 : 400
                             }}>

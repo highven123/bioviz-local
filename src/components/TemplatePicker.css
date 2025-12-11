@@ -1,100 +1,9 @@
-/* Inherits global glass styles from .gallery-container parent */
+/* TemplatePicker.css */
+
 .template-picker {
     padding: 0;
     margin-bottom: 24px;
     background: transparent;
-}
-
-.template-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
-}
-
-.template-card {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-    padding: 24px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: var(--transition);
-}
-
-.template-card:hover:not(.disabled) {
-    border-color: var(--color-primary);
-    background: rgba(56, 189, 248, 0.05);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-}
-
-.template-card.selected {
-    border-color: var(--color-primary);
-    background: rgba(56, 189, 248, 0.1);
-    box-shadow: 0 0 0 1px var(--color-primary);
-    /* Double border effect */
-}
-
-.template-card.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    filter: grayscale(1);
-}
-
-.template-icon {
-    font-size: 36px;
-    flex-shrink: 0;
-    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.2));
-}
-
-.template-info {
-    flex: 1;
-}
-
-.template-info h4 {
-    margin: 0 0 6px 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-text-main);
-    letter-spacing: -0.01em;
-}
-
-.template-id {
-    display: inline-block;
-    margin: 0 0 10px 0;
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--color-accent);
-    background: rgba(45, 212, 191, 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.template-description {
-    margin: 0;
-    font-size: 13px;
-    color: var(--color-text-muted);
-    line-height: 1.5;
-}
-
-.template-selected-badge {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 28px;
-    height: 28px;
-    background: var(--color-primary);
-    color: #000;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    border: 2px solid var(--color-bg-deep);
 }
 
 .template-picker h3 {
@@ -126,6 +35,8 @@
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
+    min-height: 80px;
+    /* Ensure consistency */
 }
 
 .template-card:hover:not(.disabled) {
@@ -145,24 +56,36 @@
 }
 
 .template-icon {
-    font-size: 32px;
+    font-size: 28px;
+    /* Slightly smaller to save space */
     flex-shrink: 0;
 }
 
 .template-info {
     flex: 1;
+    /* CRUDCIAL: Add padding to right so text doesn't hit the checkmark */
+    padding-right: 32px;
+    min-width: 0;
+    /* Allow flex child to shrink/wrap */
 }
 
 .template-info h4 {
     margin: 0 0 4px 0;
-    font-size: 15px;
+    /* Adapted font size as requested */
+    font-size: 14px;
     font-weight: 600;
     color: var(--color-text);
+    /* Ensure wrapping */
+    white-space: normal;
+    word-wrap: break-word;
+    line-height: 1.3;
 }
 
+/* ID is currently hidden in component, but keeping style just in case */
 .template-id {
-    margin: 0 0 8px 0;
-    font-size: 11px;
+    display: inline-block;
+    margin: 0 0 4px 0;
+    font-size: 10px;
     font-family: 'Monaco', monospace;
     color: var(--color-primary);
     opacity: 0.8;
@@ -173,20 +96,23 @@
     font-size: 12px;
     color: var(--color-text-muted);
     line-height: 1.4;
+    /* Optional: limit to 2 lines? */
+    /* display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; */
 }
 
 .template-selected-badge {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 24px;
-    height: 24px;
+    top: 10px;
+    right: 10px;
+    width: 22px;
+    height: 22px;
     background: var(--color-primary);
     color: white;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }

@@ -1,19 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useBioEngine } from './hooks/useBioEngine';
 import { DataImportWizard, AnalysisConfig } from './components/DataImportWizard';
-import { VolcanoPlot, VolcanoPoint } from './components/VolcanoPlot';
+import { VolcanoPlot, VolcanoPoint, VolcanoViewMode } from './components/VolcanoPlot';
 import { EvidencePanel, GeneDetail } from './components/EvidencePanel';
-import { PathwayVisualizer } from './components/PathwayVisualizer';
+import { PathwayVisualizer, PathwayVisualizerRef } from './components/PathwayVisualizer';
 import { DataTable } from './components/DataTable';
 import { WorkflowBreadcrumb, WorkflowStep } from './components/WorkflowBreadcrumb';
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { save, ask } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 import './App.css';
 
 // --- Types ---
 interface PathwayData {
   id: string;
   name: string;
+  title?: string;
   nodes: any[];
   edges: any[];
 }
@@ -29,6 +32,15 @@ interface AnalysisResult {
   analysis_table_path?: string;
 }
 
+// Helper to derive base filename (without extension) from a full path
+function getBaseName(filePath: string | undefined | null): string {
+  if (!filePath) return 'analysis';
+  const parts = filePath.split(/[\\/]/);
+  const fileName = parts[parts.length - 1] || filePath;
+  const withoutExt = fileName.replace(/\.[^.]+$/, '');
+  return withoutExt || 'analysis';
+}
+
 function App() {
   const { isConnected, isLoading: engineLoading, lastResponse, sendCommand } = useBioEngine();
 
@@ -42,12 +54,19 @@ function App() {
   const [filteredGenes, setFilteredGenes] = useState<string[]>([]);
   const [activeGene, setActiveGene] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [leftPanelView, setLeftPanelView] = useState<'chart' | 'table'>('chart');
+  const [leftPanelView, setLeftPanelView] = useState<'chart' | 'table' | 'evidence'>('chart');
+  const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
+
+  const uploadedFileBase = getBaseName(analysisData?.config?.filePath);
+
+  // License State (Simulated)
+  const isPro = true;
 
   // --- Resizing Logic ---
   const [colSizes, setColSizes] = useState<number[]>([20, 55, 25]); // Left, Center, Right in %
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const vizRef = useRef<PathwayVisualizerRef>(null);
 
   // Start resizing
   const startResize = (idx: number, e: React.MouseEvent) => {
@@ -193,12 +212,17 @@ function App() {
     setActiveGene(null);
     setWorkflowStep('viz');
 
+    const primaryMethod = (config.analysisMethods && config.analysisMethods[0]) || 'auto';
+
     await sendCommand('ANALYZE', {
       file_path: config.filePath,
       mapping: config.mapping,
       template_id: config.pathwayId,
       data_type: config.dataType,
-      filters: {}
+      filters: {
+        method: primaryMethod,
+        methods: config.analysisMethods,
+      }
     });
   };
 
@@ -218,6 +242,18 @@ function App() {
   // --- Entity labels derived from analysis data (fallback: gene) ---
   const entityKind: EntityKind = analysisData?.entityKind || 'gene';
   const entityLabels = ENTITY_META[entityKind];
+
+  // --- 是否有 MA 图所需的 mean 数据 ---
+  const hasMAData = !!analysisData?.volcano_data?.some(
+    (p) => typeof p.mean === 'number' && !Number.isNaN(p.mean)
+  );
+
+  // 如果当前结果不支持 MA，但视图停留在 MA，则自动退回 Volcano
+  useEffect(() => {
+    if (analysisData && !hasMAData && chartViewMode === 'ma') {
+      setChartViewMode('volcano');
+    }
+  }, [analysisData, hasMAData, chartViewMode]);
 
   // --- Workflow navigation ---
   const canAccessMapping = maxWizardStep >= 2;
@@ -255,6 +291,12 @@ function App() {
     }
   };
 
+  // When user clicks a node in the pathway map,
+  // sync both the active gene (for Evidence) and selection (for highlighting)
+  const handlePathwayNodeClick = (name: string) => {
+    setActiveGene(name);
+    setFilteredGenes(name ? [name] : []);
+  };
 
   // --- Render ---
 
@@ -278,7 +320,7 @@ function App() {
               fontSize: '12px',
               color: 'var(--text-secondary)'
             }}>
-              {analysisData.pathway.name}
+              {(analysisData.pathway.name || analysisData.pathway.title || 'Pathway').replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim()}
             </span>
           )}
         </div>
@@ -337,11 +379,11 @@ function App() {
           <div className="panel-header" style={{ justifyContent: 'space-between', paddingRight: '12px' }}>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                onClick={() => setLeftPanelView('chart')}
+                onClick={() => { setLeftPanelView('chart'); setChartViewMode('volcano'); }}
                 style={{
-                  background: leftPanelView === 'chart' ? 'var(--border-subtle)' : 'transparent',
+                  background: leftPanelView === 'chart' && chartViewMode === 'volcano' ? 'var(--border-subtle)' : 'transparent',
                   border: 'none',
-                  color: leftPanelView === 'chart' ? 'var(--text-primary)' : 'var(--text-dim)',
+                  color: leftPanelView === 'chart' && chartViewMode === 'volcano' ? 'var(--text-primary)' : 'var(--text-dim)',
                   padding: '2px 8px',
                   borderRadius: '4px',
                   fontSize: '11px',
@@ -350,6 +392,47 @@ function App() {
                 }}
               >
                 🌋 Volcano
+              </button>
+              {/** MA 视图仅在数据具备 mean 信息时可用 */}
+              <button
+                onClick={() => {
+                  if (!hasMAData) return;
+                  setLeftPanelView('chart');
+                  setChartViewMode('ma');
+                }}
+                disabled={!hasMAData}
+                style={{
+                  background: leftPanelView === 'chart' && chartViewMode === 'ma' ? 'var(--border-subtle)' : 'transparent',
+                  border: 'none',
+                  color: !hasMAData
+                    ? 'var(--text-muted)'
+                    : leftPanelView === 'chart' && chartViewMode === 'ma'
+                      ? 'var(--text-primary)'
+                      : 'var(--text-dim)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: !hasMAData ? 'default' : 'pointer',
+                  opacity: !hasMAData ? 0.5 : 1
+                }}
+              >
+                MA
+              </button>
+              <button
+                onClick={() => { setLeftPanelView('chart'); setChartViewMode('ranked'); }}
+                style={{
+                  background: leftPanelView === 'chart' && chartViewMode === 'ranked' ? 'var(--border-subtle)' : 'transparent',
+                  border: 'none',
+                  color: leftPanelView === 'chart' && chartViewMode === 'ranked' ? 'var(--text-primary)' : 'var(--text-dim)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Ranked
               </button>
               <button
                 onClick={() => setLeftPanelView('table')}
@@ -380,11 +463,19 @@ function App() {
           <div className="panel-body">
             {analysisData?.volcano_data ? (
               leftPanelView === 'chart' ? (
-                <VolcanoPlot
-                  data={analysisData.volcano_data}
-                  onSelectionChange={setFilteredGenes}
-                  onPointClick={setActiveGene}
-                />
+                chartViewMode === 'ma' && !hasMAData ? (
+                  <div className="empty-state">
+                    当前数据没有平均表达量（如 BaseMean 或 Ctrl/Exp 分组），
+                    暂不支持 MA 图，请切换到 Volcano 或 Ranked 视图。
+                  </div>
+                ) : (
+                  <VolcanoPlot
+                    data={analysisData.volcano_data}
+                    viewMode={chartViewMode}
+                    onSelectionChange={setFilteredGenes}
+                    onPointClick={setActiveGene}
+                  />
+                )
               ) : (
                 <DataTable
                   data={analysisData.volcano_data}
@@ -411,35 +502,171 @@ function App() {
           <div className="panel-header">
             <span>Pathway Landscape</span>
 
-            {/* Stats Summary + tools */}
-            {analysisData && (
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '11px', textTransform: 'none', color: 'var(--text-secondary)' }}>
-                <span>
-                  <b style={{ color: 'white' }}>{analysisData.statistics.total_nodes}</b>{' '}
-                  {entityLabels.labelPlural.toLowerCase()}
-                </span>
-                <span style={{ color: '#ef4444' }}><b>{analysisData.statistics.upregulated}</b> up</span>
-                <span style={{ color: '#3b82f6' }}><b>{analysisData.statistics.downregulated}</b> down</span>
-                {analysisData.analysis_table_path && (
+            {/* Header Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* Empty left side or title? Title is already "Pathway Landscape" outside this div? */
+                        /* Actually the "Pathway Landscape" text is inside the panel-header but outside this Flex container? */
+                        /* Let's double check lines 477-482 in previous code view */
+                        /* Line 477: <span>Pathway Landscape</span> */
+                        /* Line 481: <div ... justifyContent: 'space-between' ...> */
+                        /* So simply removing the stats div works. */}
+              </div>
+
+              {/* Right Actions: Toolbar */}
+              {analysisData && (
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                   <button
-                    onClick={() => openPath(analysisData.analysis_table_path!)}
+                    onClick={() => vizRef.current?.resetView()}
+                    className="viz-tool-btn"
                     style={{
-                      marginLeft: '8px',
-                      padding: '3px 10px',
-                      borderRadius: '999px',
-                      border: '1px solid var(--border-subtle)',
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '12px',
+                      gap: '6px'
+                    }}
+                    title="Reset View"
+                  >
+                    <span>🔄</span> Reset
+                  </button>
+
+                  {/* Divider */}
+                  <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+
+                  <button
+                    onClick={() => vizRef.current?.exportPNG()}
+                    className="viz-tool-btn"
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '12px',
+                      gap: '6px'
+                    }}
+                    title="Export as PNG (Bitmap)"
+                  >
+                    <span>🖼️</span> PNG
+                  </button>
+                  <button
+                    onClick={() => vizRef.current?.exportSVG()}
+                    className="viz-tool-btn"
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '12px',
+                      gap: '6px',
+                      opacity: !isPro ? 0.6 : 1
+                    }}
+                    title={!isPro ? "SVG (Pro Only)" : "Export as SVG"}
+                  >
+                    {isPro ? <span>📥</span> : <span>🔒</span>} SVG
+                  </button>
+
+                  <button
+                    onClick={() => vizRef.current?.exportPPTX()}
+                    className="viz-tool-btn"
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '12px',
+                      gap: '6px'
+                    }}
+                    title="Export as PowerPoint"
+                  >
+                    <span>📊</span> PPTX
+                  </button>
+
+                  {/* Divider */}
+                  <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+
+                  <button
+                    onClick={async () => {
+                      if (!isPro) {
+                        alert("Data Preservation is a Pro feature.\n\nFree version (simulated) allows viewing but not saving result tables.");
+                        // In real app, block here. For simulation, proceed or return? 
+                        // Prompt implies toggle acts as sim. If Free, let's block to show feature gating.
+                        return;
+                      }
+
+                      try {
+                        // 1. Open Save Dialog
+                        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+                        const suggestedName = `${uploadedFileBase}_stat_${timestamp}.csv`;
+                        const path = await save({
+                          defaultPath: suggestedName,
+                          filters: [{
+                            name: 'CSV File',
+                            extensions: ['csv']
+                          }]
+                        });
+
+                        if (!path) return; // User cancelled
+
+                        // 2. Build CSV content on the client side
+                        // NOTE: Column 3 header intentionally avoids starting with '-' or '='
+                        // to prevent Excel from auto-interpreting it as a formula.
+                        const header = ['Gene', 'Log2FC', 'neg_log10(P)', 'PValue', 'Status', 'Mean'];
+                        const escape = (v: unknown): string => {
+                          if (v === null || v === undefined) return '';
+                          const s = String(v);
+                          if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+                            return `"${s.replace(/"/g, '""')}"`;
+                          }
+                          return s;
+                        };
+                        const lines = [
+                          header.join(','),
+                          ...analysisData.volcano_data.map(p => [
+                            escape(p.gene),
+                            escape(p.x),
+                            escape(p.y),
+                            escape(p.pvalue),
+                            escape(p.status),
+                            escape(p.mean)
+                          ].join(','))
+                        ];
+                        const csvContent = lines.join('\n');
+
+                        // 3. Write CSV file using Tauri FS plugin
+                        await writeTextFile(path, csvContent);
+
+                        // 4. Confirm & Open
+                        const shouldOpen = await ask(`Data saved successfully to:\n${path}\n\nDo you want to open it now?`, {
+                          title: 'Save Successful',
+                          kind: 'info',
+                          okLabel: 'Open File',
+                          cancelLabel: 'Close'
+                        });
+
+                        if (shouldOpen) {
+                          try {
+                            await openPath(path);
+                          } catch (e) {
+                            alert("Failed to open file: " + e);
+                          }
+                        }
+
+                      } catch (e) {
+                        alert("Failed to save data: " + e);
+                      }
+                    }}
+                    className="viz-tool-btn"
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '12px',
+                      gap: '6px',
+                      borderRadius: '4px',
                       background: 'transparent',
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      fontSize: '10px',
-                      textTransform: 'none'
+                      border: '1px solid var(--border-subtle)',
+                      color: isPro ? 'var(--text-secondary)' : 'var(--text-dim)',
+                      opacity: isPro ? 1 : 0.7
                     }}
                   >
-                    Open Stats CSV
+                    {isPro ? <span>📂</span> : <span>🔒</span>} Data
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="panel-body" style={{ position: 'relative' }}>
@@ -456,13 +683,17 @@ function App() {
 
             {analysisData ? (
               <PathwayVisualizer
+                ref={vizRef}
                 nodes={analysisData.pathway.nodes}
                 edges={analysisData.pathway.edges}
                 title={analysisData.pathway.name}
                 theme="dark"
                 pathwayId={analysisData.pathway.id}
-                onNodeClick={setActiveGene}
+                dataType={entityKind}
+                sourceFileBase={uploadedFileBase}
+                onNodeClick={handlePathwayNodeClick}
                 selectedNodeNames={filteredGenes}
+                isPro={isPro}
               />
             ) : (
               <div className="empty-state">
@@ -505,7 +736,7 @@ function App() {
         padding: '0 12px', fontSize: '11px', color: 'var(--text-dim)',
         flexShrink: 0
       }}>
-        <div>BioViz Local v0.3.0 • Workbench Mode</div>
+        <div>BioViz Local v1.0.0 • Workbench Mode</div>
         <div style={{ display: 'flex', gap: '8px', maxWidth: '500px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ color: 'var(--brand-primary)' }}>Last:</span> {logs.length > 0 ? logs[logs.length - 1] : 'Ready'}
         </div>
