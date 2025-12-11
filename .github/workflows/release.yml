@@ -55,7 +55,7 @@ jobs:
 
       - name: Install Python dependencies (macOS)
         if: matrix.platform == 'macos-latest'
-        run: pip3 install cython setuptools openpyxl numpy scipy
+        run: pip3 install cython setuptools openpyxl numpy scipy --break-system-packages
 
       - name: Install frontend dependencies
         run: npm install

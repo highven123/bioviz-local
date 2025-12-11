@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { save } from '@tauri-apps/plugin-dialog';
