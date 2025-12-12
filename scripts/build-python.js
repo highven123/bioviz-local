@@ -110,8 +110,18 @@ function buildPython() {
     // Important: --hidden-import is often needed for dynamic imports, but here bio_core is imported directly
     // PyInstaller should automatically pick up the .so/.pyd file if it exists next to the script
     try {
+        // Determine separator for --add-data (Windows uses ';', others use ':')
+        const sep = process.platform === 'win32' ? ';' : ':';
+
+        // Define data to bundle: source_path{{sep}}dest_path
+        // PyInstaller expects source path relative to CWD (PYTHON_DIR) or absolute
+        // We want to bundle "../assets/templates" to "assets/templates"
+        const sourcePath = path.join(ROOT_DIR, 'assets', 'templates');
+        const destPath = path.join('assets', 'templates');
+        const addDataArg = `--add-data "${sourcePath}${sep}${destPath}"`;
+
         execSync(
-            `pyinstaller --onefile --name bio-engine --distpath "${PYTHON_DIR}/dist" "${PYTHON_ENTRY}"`,
+            `pyinstaller --onefile ${addDataArg} --name bio-engine --distpath "${PYTHON_DIR}/dist" "${PYTHON_ENTRY}"`,
             {
                 cwd: PYTHON_DIR,
                 stdio: 'inherit',

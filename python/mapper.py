@@ -22,7 +22,14 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
     import sys
     
     # Try multiple possible locations
-    search_paths = [
+    # Try multiple possible locations
+    search_paths = []
+    
+    # PyInstaller temporary directory (standard for --onefile bundles)
+    if hasattr(sys, '_MEIPASS'):
+         search_paths.append(Path(sys._MEIPASS) / 'assets' / 'templates' / f'{pathway_id}.json')
+
+    search_paths.extend([
         # Development: relative to this file
         Path(__file__).parent.parent / 'assets' / 'templates' / f'{pathway_id}.json',
         # Packaged app: relative to executable
@@ -37,7 +44,7 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
         Path.cwd().parent / 'assets' / 'templates' / f'{pathway_id}.json',
         # Alternative: absolute path fallback (for dev)
         Path('/Users/haifeng/BioViz-Local/assets/templates') / f'{pathway_id}.json',
-    ]
+    ])
     
     for template_path in search_paths:
         if template_path.exists():
