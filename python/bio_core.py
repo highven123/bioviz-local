@@ -1122,9 +1122,12 @@ def search_kegg_pathways(query: str) -> List[Dict[str, str]]:
     query = urllib.parse.quote(query)
     url = f"http://rest.kegg.jp/find/pathway/{query}"
     
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    req = urllib.request.Request(url, headers=headers)
+    
     results = []
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             data = response.read().decode('utf-8')
             for line in data.strip().split('\n'):
                 if not line: continue
@@ -1150,6 +1153,18 @@ def search_kegg_pathways(query: str) -> List[Dict[str, str]]:
                         "description": desc # simple fallback
                     })
         return results
+        return results
+    except urllib.error.URLError as e:
+        print(f"[BioEngine] Network error: {e}", file=sys.stderr)
+        # Return a special error result or just empty list with logging
+        # Since this returns a list, we might need to handle the error at the caller level 
+        # OR just return empty list and let the frontend handle "No results"
+        # Ideally, we should raise or return an error dict, but the signature is List[Dict].
+        # For now, let's log it. 
+        # Better: Modify signature to allow returning error? 
+        # Existing caller `handle_search_pathways` expects list.
+        # Let's return a "fake" result item indicating error if possible, OR just handle in `handle_search_pathways`.
+        raise e # Let caller handle it
     except Exception as e:
         print(f"[BioEngine] Search failed: {e}", file=sys.stderr)
         return []
@@ -1304,9 +1319,12 @@ def download_kegg_pathway(pathway_id: str) -> Dict[str, Any]:
     
     # 1. Fetch KGML
     url = f"http://rest.kegg.jp/get/{pathway_id}/kgml"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    req = urllib.request.Request(url, headers=headers)
+
     try:
         print(f"[BioEngine] DownloadingKGML: {url}", file=sys.stderr)
-        with urllib.request.urlopen(url, timeout=15) as response:
+        with urllib.request.urlopen(req, timeout=15) as response:
             kgml_content = response.read().decode('utf-8')
     except Exception as e:
          return {"status": "error", "message": f"Failed to download KGML: {str(e)}"}
@@ -1377,8 +1395,14 @@ def handle_search_pathways(payload: Dict[str, Any]) -> Dict[str, Any]:
     query = payload.get("query", "")
     if not query:
         return {"status": "error", "message": "No query provided"}
-    results = search_kegg_pathways(query)
-    return {"status": "ok", "results": results}
+    try:
+        results = search_kegg_pathways(query)
+        return {"status": "ok", "results": results}
+    except Exception as e:
+         return {
+             "status": "error", 
+             "message": f"Network Error: Failed to connect to KEGG. Please check your internet connection or use a VPN (KEGG is often blocked in China). Details: {str(e)}"
+         }
 
 def handle_download_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
     pid = payload.get("id", "")
