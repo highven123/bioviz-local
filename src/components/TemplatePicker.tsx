@@ -113,8 +113,8 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ onSelect, disabl
         setIsOnlineMode(false);
         handleSelect(id);
 
-        // Show success alert? Or just switch backend // @ts-ignore
-        console.log("Downloaded:", res.path);
+        // Show success alert? Or just switch backend
+        console.log("Downloaded:", (res as any).path);
       } else { // @ts-ignore
         alert(`Download failed: ${res?.message}`);
       }
