@@ -5,6 +5,7 @@ import { VolcanoPlot, VolcanoPoint, VolcanoViewMode } from './components/Volcano
 import { EvidencePanel, GeneDetail } from './components/EvidencePanel';
 import { PathwayVisualizer, PathwayVisualizerRef } from './components/PathwayVisualizer';
 import { DataTable } from './components/DataTable';
+import { ResultTabs } from './components/ResultTabs';
 import { WorkflowBreadcrumb, WorkflowStep } from './components/WorkflowBreadcrumb';
 import { SplashScreen } from './components/SplashScreen'; // New Import
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
@@ -32,6 +33,7 @@ interface AnalysisResult {
   config: AnalysisConfig;
   entityKind: EntityKind;
   analysis_table_path?: string;
+  sourceFilePath: string;
 }
 
 // Helper to derive base filename (without extension) from a full path
@@ -46,22 +48,25 @@ function getBaseName(filePath: string | undefined | null): string {
 function App() {
   const [showSplash, setShowSplash] = useState(true); // Splash State
 
-  const { isConnected, isLoading: engineLoading, lastResponse, sendCommand } = useBioEngine();
+  const { isConnected, isLoading: engineLoading, sendCommand } = useBioEngine();
 
   // --- State ---
-  const [pendingConfig, setPendingConfig] = useState<AnalysisConfig | null>(null);
   const [draftConfig, setDraftConfig] = useState<AnalysisConfig | null>(null);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [maxWizardStep, setMaxWizardStep] = useState<1 | 2 | 3>(1);
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('upload');
-  const [analysisData, setAnalysisData] = useState<AnalysisResult | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
+  const [activeResultIndex, setActiveResultIndex] = useState<number>(0);
   const [filteredGenes, setFilteredGenes] = useState<string[]>([]);
   const [activeGene, setActiveGene] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [leftPanelView, setLeftPanelView] = useState<'chart' | 'table' | 'evidence'>('chart');
   const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
 
-  const uploadedFileBase = getBaseName(analysisData?.config?.filePath);
+  const activeAnalysis = analysisResults[activeResultIndex] || null;
+  const uploadedFileBase = getBaseName(activeAnalysis?.sourceFilePath);
+
+  const [batchRunning, setBatchRunning] = useState(false);
 
   // License State (Simulated)
   const isPro = true;
@@ -171,23 +176,54 @@ function App() {
     void persistLog();
   };
 
-  // --- BioEngine Response Handler ---
-  useEffect(() => {
-    if (lastResponse) {
-      const response = lastResponse as any;
+  // --- Actions ---
+  const handleAnalysisStart = async (config: AnalysisConfig) => {
+    addLog(`Running analysis for pathway: ${config.pathwayId}...`);
+    setBatchRunning(true);
 
-      // 支持旧版 engine（无 volcano_data）和新版（带 volcano_data）
-      if (response.status === 'ok' && response.pathway) {
+    // Prepare UI for new analysis
+    setAnalysisResults([]);
+    setActiveResultIndex(0);
+    setFilteredGenes([]);
+    setActiveGene(null);
+    setWorkflowStep('viz');
+
+    const primaryMethod = (config.analysisMethods && config.analysisMethods[0]) || 'auto';
+
+    let successCount = 0;
+    for (const filePath of config.filePaths) {
+      const base = getBaseName(filePath);
+      addLog(`▶ Analyzing: ${base}`);
+
+      try {
+        const response = await sendCommand(
+          'ANALYZE',
+          {
+            file_path: filePath,
+            mapping: config.mapping,
+            template_id: config.pathwayId,
+            data_type: config.dataType,
+            filters: {
+              method: primaryMethod,
+              methods: config.analysisMethods,
+            },
+          },
+          true,
+        ) as any;
+
+        if (response?.status !== 'ok' || !response?.pathway) {
+          addLog(`❌ Analysis failed for ${base}: ${response?.message || 'Unknown error'}`);
+          continue;
+        }
+
         const volcano: VolcanoPoint[] = Array.isArray(response.volcano_data)
           ? response.volcano_data
           : [];
-
         const gene_map: Record<string, VolcanoPoint> = {};
         volcano.forEach((p: VolcanoPoint) => {
           gene_map[p.gene] = p;
         });
 
-        const config = pendingConfig || analysisData?.config || ({} as any);
         const entityKind = resolveEntityKind(
           response.pathway?.metadata?.data_type,
           config?.dataType,
@@ -202,86 +238,62 @@ function App() {
           config,
           entityKind,
           analysis_table_path: response.analysis_table_path || undefined,
+          sourceFilePath: filePath,
         };
 
-        setAnalysisData(result);
-        setPendingConfig(null);
-        setWorkflowStep('viz');
+        setAnalysisResults((prev) => [...prev, result]);
+        successCount += 1;
+
         const pathwayName =
           response.pathway.name ||
           response.pathway.title ||
           response.pathway.id ||
           'analysis';
-        addLog(`✓ Analysis complete: ${pathwayName}`);
-        if (response.analysis_table_path) {
-          addLog(`Saved analysis table → ${response.analysis_table_path}`);
-        }
-        setFilteredGenes([]);
-        setActiveGene(null);
-      } else if (response.status === 'error') {
-        addLog(`❌ Engine Error: ${response.message}`);
-        alert(`Analysis Failed: ${response.message}`);
+        addLog(`✓ Done: ${base} → ${pathwayName}`);
+      } catch (e: any) {
+        addLog(`❌ Analysis error for ${base}: ${e?.message || String(e)}`);
       }
     }
-  }, [lastResponse]);
 
-  // --- Actions ---
-  const handleAnalysisStart = async (config: AnalysisConfig) => {
-    addLog(`Running analysis for pathway: ${config.pathwayId}...`);
-    // Prepare UI for new analysis
-    setPendingConfig(config);
-    setAnalysisData(null);
-    setFilteredGenes([]);
-    setActiveGene(null);
-    setWorkflowStep('viz');
-
-    const primaryMethod = (config.analysisMethods && config.analysisMethods[0]) || 'auto';
-
-    await sendCommand('ANALYZE', {
-      file_path: config.filePath,
-      mapping: config.mapping,
-      template_id: config.pathwayId,
-      data_type: config.dataType,
-      filters: {
-        method: primaryMethod,
-        methods: config.analysisMethods,
-      }
-    });
+    setBatchRunning(false);
+    if (successCount === 0) {
+      alert('Analysis failed for all selected files.');
+    }
   };
 
 
 
   const activeGeneDetail = useMemo((): GeneDetail | null => {
-    if (!analysisData || !activeGene) return null;
-    const point = analysisData.gene_map[activeGene];
+    if (!activeAnalysis || !activeGene) return null;
+    const point = activeAnalysis.gene_map[activeGene];
     if (!point) return null;
     return {
       name: point.gene,
       logFC: point.x,
       pvalue: point.pvalue
     };
-  }, [analysisData, activeGene]);
+  }, [activeAnalysis, activeGene]);
 
   // --- Entity labels derived from analysis data (fallback: gene) ---
-  const entityKind: EntityKind = analysisData?.entityKind || 'gene';
+  const entityKind: EntityKind = activeAnalysis?.entityKind || 'gene';
   const entityLabels = ENTITY_META[entityKind];
 
   // --- 是否有 MA 图所需的 mean 数据 ---
-  const hasMAData = !!analysisData?.volcano_data?.some(
+  const hasMAData = !!activeAnalysis?.volcano_data?.some(
     (p) => typeof p.mean === 'number' && !Number.isNaN(p.mean)
   );
 
   // 如果当前结果不支持 MA，但视图停留在 MA，则自动退回 Volcano
   useEffect(() => {
-    if (analysisData && !hasMAData && chartViewMode === 'ma') {
+    if (activeAnalysis && !hasMAData && chartViewMode === 'ma') {
       setChartViewMode('volcano');
     }
-  }, [analysisData, hasMAData, chartViewMode]);
+  }, [activeAnalysis, hasMAData, chartViewMode]);
 
   // --- Workflow navigation ---
   const canAccessMapping = maxWizardStep >= 2;
   const canAccessGallery = maxWizardStep >= 3;
-  const canAccessViz = !!analysisData;
+  const canAccessViz = analysisResults.length > 0;
 
   const handleWorkflowStepClick = (step: WorkflowStep) => {
     if (step === 'upload') {
@@ -303,7 +315,7 @@ function App() {
     }
     if (step === 'viz') {
       // 如果已经有分析结果，直接切换到可视化
-      if (analysisData) {
+      if (analysisResults.length > 0) {
         setWorkflowStep('viz');
         return;
       }
@@ -319,6 +331,21 @@ function App() {
   const handlePathwayNodeClick = (name: string) => {
     setActiveGene(name);
     setFilteredGenes(name ? [name] : []);
+  };
+
+  const resultTabs = useMemo(() => {
+    return analysisResults.map((r, idx) => {
+      const base = getBaseName(r.sourceFilePath);
+      const trimmed = base.length > 12 ? `${base.slice(0, 12)}…` : base;
+      const label = `${trimmed} #${idx + 1}`;
+      return { key: `${r.sourceFilePath}:${idx}`, label };
+    });
+  }, [analysisResults]);
+
+  const handleSelectResult = (idx: number) => {
+    setActiveResultIndex(idx);
+    setFilteredGenes([]);
+    setActiveGene(null);
   };
 
   // --- Render ---
@@ -338,7 +365,7 @@ function App() {
             <span>🧬</span>
             BioViz <span>Local</span>
           </h1>
-          {analysisData && (
+          {activeAnalysis && (
             <span style={{
               marginLeft: '20px',
               padding: '4px 12px',
@@ -348,7 +375,7 @@ function App() {
               fontSize: '12px',
               color: 'var(--text-secondary)'
             }}>
-              {(analysisData.pathway.name || analysisData.pathway.title || 'Pathway').replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim()}
+              {(activeAnalysis.pathway.name || activeAnalysis.pathway.title || 'Pathway').replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim()}
             </span>
           )}
         </div>
@@ -382,6 +409,7 @@ function App() {
           onCancel={() => { }}
           addLog={addLog}
           isConnected={isConnected}
+          sendCommand={sendCommand}
           activeStep={wizardStep}
           onStepChange={(s) => {
             setWizardStep(s);
@@ -447,7 +475,7 @@ function App() {
             )}
           </div>
           <div className="panel-body">
-            {analysisData?.volcano_data ? (
+            {activeAnalysis?.volcano_data ? (
               leftPanelView === 'chart' ? (
                 chartViewMode === 'ma' && !hasMAData ? (
                   <div className="empty-state">
@@ -456,7 +484,7 @@ function App() {
                   </div>
                 ) : (
                   <VolcanoPlot
-                    data={analysisData.volcano_data}
+                    data={activeAnalysis.volcano_data}
                     viewMode={chartViewMode}
                     onSelectionChange={setFilteredGenes}
                     onPointClick={setActiveGene}
@@ -464,7 +492,7 @@ function App() {
                 )
               ) : (
                 <DataTable
-                  data={analysisData.volcano_data}
+                  data={activeAnalysis.volcano_data}
                   onRowClick={setActiveGene}
                   labels={entityLabels}
                 />
@@ -500,7 +528,7 @@ function App() {
               </div>
 
               {/* Right Actions: Toolbar */}
-              {analysisData && (
+              {activeAnalysis && (
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                   <button
                     onClick={() => vizRef.current?.resetView()}
@@ -603,7 +631,7 @@ function App() {
                         };
                         const lines = [
                           header.join(','),
-                          ...analysisData.volcano_data.map(p => [
+                          ...activeAnalysis.volcano_data.map(p => [
                             escape(p.gene),
                             escape(p.x),
                             escape(p.y),
@@ -657,8 +685,14 @@ function App() {
             </div>
           </div>
 
-          <div className="panel-body" style={{ position: 'relative' }}>
-            {engineLoading && (
+          <div className="panel-body" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            <ResultTabs
+              tabs={resultTabs}
+              activeIndex={activeResultIndex}
+              onSelect={handleSelectResult}
+            />
+
+            {(engineLoading || batchRunning) && (
               <div style={{
                 position: 'absolute', inset: 0, zIndex: 50,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -669,26 +703,28 @@ function App() {
               </div>
             )}
 
-            {analysisData ? (
-              <PathwayVisualizer
-                ref={vizRef}
-                nodes={analysisData.pathway.nodes}
-                edges={analysisData.pathway.edges}
-                title={analysisData.pathway.name}
-                theme="dark"
-                pathwayId={analysisData.pathway.id}
-                dataType={entityKind}
-                sourceFileBase={uploadedFileBase}
-                onNodeClick={handlePathwayNodeClick}
-                selectedNodeNames={filteredGenes}
-                isPro={isPro}
-              />
-            ) : (
-              <div className="empty-state">
-                <p style={{ fontSize: '40px', marginBottom: '10px', opacity: 0.5 }}>🧬</p>
-                Start a new analysis to view pathway
-              </div>
-            )}
+            <div style={{ flex: 1, minHeight: 0 }}>
+              {activeAnalysis ? (
+                <PathwayVisualizer
+                  ref={vizRef}
+                  nodes={activeAnalysis.pathway.nodes}
+                  edges={activeAnalysis.pathway.edges}
+                  title={activeAnalysis.pathway.name}
+                  theme="dark"
+                  pathwayId={activeAnalysis.pathway.id}
+                  dataType={entityKind}
+                  sourceFileBase={uploadedFileBase}
+                  onNodeClick={handlePathwayNodeClick}
+                  selectedNodeNames={filteredGenes}
+                  isPro={isPro}
+                />
+              ) : (
+                <div className="empty-state">
+                  <p style={{ fontSize: '40px', marginBottom: '10px', opacity: 0.5 }}>🧬</p>
+                  Start a new analysis to view pathway
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileDropZone } from './FileDropZone';
 import { TemplatePicker } from './TemplatePicker';
 import './DataImportWizard.css'; // New CSS file
+import { open } from '@tauri-apps/plugin-dialog';
 
 
 // --- Types ---
@@ -9,7 +10,8 @@ import './DataImportWizard.css'; // New CSS file
 export type AnalysisMethod = 'auto' | 'ttest' | 'precomputed';
 
 export interface AnalysisConfig {
-    filePath: string;
+    /** One or more input data files (batch mode when length > 1). */
+    filePaths: string[];
     mapping: {
         gene: string;
         value: string;
@@ -29,6 +31,7 @@ interface DataImportWizardProps {
     onCancel: () => void;
     addLog: (msg: string) => void;
     isConnected: boolean;
+    sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<any>;
     /** 当前步骤（1=Import,2=Map,3=Pathway），可由外部控制 */
     activeStep?: 1 | 2 | 3;
     /** 步骤变化回调，用于同步外部导航 */
@@ -64,7 +67,13 @@ const loadLastConfig = (): AnalysisConfig | null => {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (!saved) return null;
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Backward compatibility: v1 stored `filePath` as a string.
+        if (parsed && !Array.isArray(parsed.filePaths) && typeof parsed.filePath === 'string') {
+            parsed.filePaths = [parsed.filePath];
+        }
+        if (!parsed || !Array.isArray(parsed.filePaths) || parsed.filePaths.length === 0) return null;
+        return parsed as AnalysisConfig;
     } catch (e) {
         console.warn("Failed to load last config:", e);
         return null;
@@ -77,13 +86,21 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     onComplete,
     addLog,
     isConnected,
+    sendCommand,
     activeStep,
     onStepChange,
     onConfigPreview
 }) => {
     const [step, setStep] = useState<1 | 2 | 3>(activeStep ?? 1);
-    const [fileInfo, setFileInfo] = useState<UploadedFileInfo | null>(null);
-    const [mapping, setMapping] = useState<{ gene: string; value: string; pvalue?: string } | null>(null);
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedFileInfo[] | null>(null);
+    const [baseDataType, setBaseDataType] = useState<'gene' | 'protein' | 'cell' | null>(null);
+    const [mapping, setMapping] = useState<{
+        gene: string;
+        value: string;
+        pvalue?: string;
+        controlCols?: string[];
+        treatCols?: string[];
+    } | null>(null);
     const [selectedPathway, setSelectedPathway] = useState<string>('');
     // Skip Wizard Logic
     const lastConfig = loadLastConfig();
@@ -105,7 +122,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
 
     const handleQuickLoad = () => {
         if (lastConfig) {
-            addLog(`⚡ Loaded previous config: ${lastConfig.filePath} (${lastConfig.pathwayId})`);
+            addLog(`⚡ Loaded previous config: ${lastConfig.filePaths?.[0]} (${lastConfig.pathwayId})`);
             onComplete(lastConfig);
         }
     };
@@ -119,7 +136,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     };
 
     const emitConfigPreview = (overridePathwayId?: string) => {
-        if (!fileInfo || !mapping) {
+        if (!uploadedFiles || uploadedFiles.length === 0 || !mapping) {
             onConfigPreview?.(null);
             return;
         }
@@ -128,24 +145,46 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             onConfigPreview?.(null);
             return;
         }
+        const primary = uploadedFiles[0];
         const cfg: AnalysisConfig = {
-            filePath: fileInfo.path,
+            filePaths: uploadedFiles.map(f => f.path),
             mapping,
             pathwayId,
-            dataType: fileInfo.dataType,
+            dataType: primary.dataType,
             analysisMethods,
         };
         onConfigPreview?.(cfg);
     };
 
     const handleUploadSuccess = (data: any) => {
-        setFileInfo({
-            path: data.filePath,
-            columns: data.columns,
-            preview: data.preview,
-            suggestedMapping: data.suggestedMapping,
-            dataType: data.dataType
+        const incoming = Array.isArray(data?.files) ? data.files : [data];
+        const files: UploadedFileInfo[] = incoming
+            .filter((f: any) => f && typeof f.filePath === 'string')
+            .map((f: any) => ({
+                path: f.filePath,
+                columns: Array.isArray(f.columns) ? f.columns : [],
+                preview: Array.isArray(f.preview) ? f.preview : [],
+                suggestedMapping: f.suggestedMapping || {},
+                dataType: f.dataType || 'gene',
+            }));
+
+        if (files.length === 0) return;
+
+        const merged = (uploadedFiles || []).slice();
+        files.forEach(f => {
+            if (!baseDataType) {
+                setBaseDataType(f.dataType);
+            } else if (baseDataType !== f.dataType) {
+                alert(`Data type mismatch: expected ${baseDataType}, but got ${f.dataType} for file ${f.path}. Skipped.`);
+                return;
+            }
+            if (!merged.find(m => m.path === f.path)) {
+                merged.push(f);
+            }
         });
+
+        if (merged.length === 0) return;
+        setUploadedFiles(merged);
         updateStep(2);
         // 上传完成但尚未映射/选路径，配置还不完整
         onConfigPreview?.(null);
@@ -165,42 +204,46 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
 
     // Initialize mapping defaults when a new file is loaded
     useEffect(() => {
-        if (step === 2 && fileInfo) {
-            if (fileInfo.path !== fileStamp) {
-                setFileStamp(fileInfo.path);
-                const columns = fileInfo.columns || [];
+        if (step === 2 && uploadedFiles && uploadedFiles.length > 0) {
+            const stamp = uploadedFiles.map(f => f.path).join('|');
+            if (stamp !== fileStamp) {
+                setFileStamp(stamp);
+                const primary = uploadedFiles[0];
+                const columns = primary.columns || [];
 
-                const defaultGene = fileInfo.suggestedMapping.gene || columns[0] || '';
+                const defaultGene = primary.suggestedMapping.gene || columns[0] || '';
 
                 // Prefer suggested value; otherwise pick the first non-gene column if exists
-                let defaultValue = fileInfo.suggestedMapping.value || '';
+                let defaultValue = primary.suggestedMapping.value || '';
                 if (!defaultValue) {
                     defaultValue = columns.find(c => c !== defaultGene) || '';
                 }
 
                 setSelectedGeneCol(defaultGene);
                 setSelectedValueCol(defaultValue);
-                setSelectedPValueCol(fileInfo.suggestedMapping.pvalue || '');
+                setSelectedPValueCol(primary.suggestedMapping.pvalue || '');
 
                 // Restore analysis methods from last config if the same file is reused
-                if (lastConfig && lastConfig.filePath === fileInfo.path && Array.isArray(lastConfig.analysisMethods)) {
+                const lastPrimary = lastConfig?.filePaths?.[0];
+                if (lastConfig && lastPrimary === primary.path && Array.isArray(lastConfig.analysisMethods)) {
                     setAnalysisMethods(lastConfig.analysisMethods.length > 0 ? lastConfig.analysisMethods : ['auto']);
                 } else {
                     setAnalysisMethods(['auto']);
                 }
             }
         }
-    }, [step, fileInfo, lastConfig, fileStamp]);
+    }, [step, uploadedFiles, lastConfig, fileStamp]);
 
     // Detect "raw matrix" layout: multiple Ctrl_*/Exp_* columns, no P-value
     const rawMatrixInfo = useMemo(() => {
-        if (!fileInfo) return null;
-        const colsLower = fileInfo.columns.map(c => c.toLowerCase());
+        if (!uploadedFiles || uploadedFiles.length === 0) return null;
+        const primary = uploadedFiles[0];
+        const colsLower = primary.columns.map(c => c.toLowerCase());
         const controls: string[] = [];
         const treats: string[] = [];
 
         colsLower.forEach((name, idx) => {
-            const original = fileInfo.columns[idx];
+            const original = primary.columns[idx];
             if (name.includes('ctrl') || name.includes('control')) {
                 controls.push(original);
             } else if (name.includes('exp') || name.includes('treat')) {
@@ -208,12 +251,12 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             }
         });
 
-        const hasP = !!fileInfo.suggestedMapping.pvalue;
+        const hasP = !!primary.suggestedMapping.pvalue;
         if (controls.length > 0 && treats.length > 0 && !hasP) {
             return { controls, treats };
         }
         return null;
-    }, [fileInfo]);
+    }, [uploadedFiles]);
 
     const isRawMatrix = !!rawMatrixInfo;
 
@@ -241,10 +284,88 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
 
     const handleMappingConfirm = () => {
         if (!selectedGeneCol) return;
+        if (!uploadedFiles || uploadedFiles.length === 0) return;
 
         // 对于原始矩阵（Ctrl_*/Exp_* 多列强度），支持自动或手动选择列。
         const effectiveValueCol = isRawMatrix ? '__raw_matrix__' : selectedValueCol;
         if (!effectiveValueCol) return;
+
+        const findFallback = (cols: string[], kind: 'gene' | 'value' | 'pvalue'): string | null => {
+            const lower = cols.map(c => c.toLowerCase());
+            if (kind === 'gene') {
+                const keywords = ['gene', 'symbol', 'name', 'id', 'identifier', 'accession', 'cell', 'protein', 'uniprot'];
+                const hit = cols.find((_c, idx) => keywords.some(k => lower[idx].includes(k)));
+                return hit || null;
+            }
+            if (kind === 'value') {
+                const keywords = ['logfc', 'log2fc', 'fold', 'fc', 'ratio', 'expr', 'value', 'intensity', 'score'];
+                const hit = cols.find((_c, idx) => keywords.some(k => lower[idx].includes(k)));
+                return hit || null;
+            }
+            if (kind === 'pvalue') {
+                const keywords = ['pvalue', 'p-value', 'pval', 'p_value', 'fdr', 'qvalue', 'padj', 'adj'];
+                const hit = cols.find((_c, idx) => keywords.some(k => lower[idx].includes(k)));
+                return hit || null;
+            }
+            return null;
+        };
+
+        // Validate mapping against ALL selected files to prevent batch failures later.
+        for (const f of uploadedFiles) {
+            const cols = new Set(f.columns);
+            if (!cols.has(selectedGeneCol)) {
+                const fallback = findFallback(f.columns, 'gene');
+                if (fallback) {
+                    addLog(`⚠️ Gene column '${selectedGeneCol}' not found in ${f.path}, using '${fallback}'`);
+                } else {
+                    alert(`Column '${selectedGeneCol}' not found in file: ${f.path}`);
+                    return;
+                }
+            }
+            if (!isRawMatrix) {
+                if (!selectedValueCol || !cols.has(selectedValueCol)) {
+                    const fallback = findFallback(f.columns, 'value');
+                    if (fallback) {
+                        addLog(`⚠️ Value column '${selectedValueCol}' not found in ${f.path}, using '${fallback}'`);
+                    } else {
+                        alert(`Column '${selectedValueCol}' not found in file: ${f.path}`);
+                        return;
+                    }
+                }
+                if (selectedPValueCol && !cols.has(selectedPValueCol)) {
+                    const fallback = findFallback(f.columns, 'pvalue');
+                    if (fallback) {
+                        addLog(`⚠️ P-value column '${selectedPValueCol}' not found in ${f.path}, using '${fallback}'`);
+                    } else {
+                        alert(`P-value column '${selectedPValueCol}' not found in file: ${f.path}`);
+                        return;
+                    }
+                }
+            } else {
+                if (rawMode === 'manual') {
+                    for (const c of manualControlCols) {
+                        if (!cols.has(c)) {
+                            alert(`Control column '${c}' not found in file: ${f.path}`);
+                            return;
+                        }
+                    }
+                    for (const c of manualTreatCols) {
+                        if (!cols.has(c)) {
+                            alert(`Experiment column '${c}' not found in file: ${f.path}`);
+                            return;
+                        }
+                    }
+                } else {
+                    const lowered = f.columns.map(c => c.toLowerCase());
+                    const hasCtrl = lowered.some(c => c.includes('ctrl') || c.includes('control'));
+                    const hasExp = lowered.some(c => c.includes('exp') || c.includes('treat'));
+                    if (!hasCtrl || !hasExp) {
+                        alert(`Raw matrix mode requires Ctrl/Exp replicate columns, but they were not detected in file: ${f.path}`);
+                        return;
+                    }
+                }
+            }
+        }
 
         const mappingPayload = {
             gene: selectedGeneCol,
@@ -268,13 +389,14 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     };
 
     const handleVisualizeClick = () => {
-        if (!fileInfo || !mapping || !selectedPathway) return;
+        if (!uploadedFiles || uploadedFiles.length === 0 || !mapping || !selectedPathway) return;
 
+        const primary = uploadedFiles[0];
         const config: AnalysisConfig = {
-            filePath: fileInfo.path,
+            filePaths: uploadedFiles.map(f => f.path),
             mapping: mapping,
             pathwayId: selectedPathway,
-            dataType: fileInfo.dataType,
+            dataType: primary.dataType,
             analysisMethods,
         };
 
@@ -308,6 +430,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                         </div>
 
                         <FileDropZone
+                            sendCommand={sendCommand}
                             onLoadSuccess={handleUploadSuccess}
                             addLog={addLog}
                         />
@@ -326,11 +449,100 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                 )}
 
                 {/* STEP 2: MAPPING */}
-                {step === 2 && fileInfo && (
+                {step === 2 && uploadedFiles && uploadedFiles.length > 0 && (
                     <div className="step-wrapper">
                         <div className="section-header">
                             <h3>Map Columns</h3>
-                            <p>Specify which columns contain identifiers, effect size, and optional p-values.</p>
+                            <p>Specify which columns contain identifiers, effect size, and optional p-values. Tip: 在数据文件里用清晰的列名标记好基因/蛋白/细胞列和效应值/LogFC/P-value 列（行名请放在第一列），可避免导入时匹配失败。</p>
+                        </div>
+
+                        <div className="file-list-card">
+                            <div className="file-list-title">
+                                Selected files ({uploadedFiles.length})
+                            </div>
+                            <div className="file-list-items">
+                                {uploadedFiles.map((f) => (
+                                    <div key={f.path} className="file-list-item">
+                                        <span className="file-list-name">{f.path.split(/[\\/]/).pop()}</span>
+                                        <button
+                                            className="file-list-remove"
+                                            onClick={() => {
+                                                const next = uploadedFiles.filter(x => x.path !== f.path);
+                                                setUploadedFiles(next.length > 0 ? next : null);
+                                                setMapping(null);
+                                                setSelectedPathway('');
+                                                onConfigPreview?.(null);
+                                                if (next.length === 0) {
+                                                    updateStep(1);
+                                                }
+                                            }}
+                                            title="Remove file"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="file-list-hint">
+                                Column mapping and pathway selection will be applied to all selected files.
+                            </div>
+                            <div style={{ marginTop: '10px' }}>
+                                <button
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{ padding: '8px 12px' }}
+                                    onClick={async () => {
+                                        try {
+                                            const selected = await open({
+                                                multiple: true,
+                                                filters: [{
+                                                    name: 'Data Files',
+                                                    extensions: ['csv', 'xlsx', 'xls', 'txt', 'tsv']
+                                                }]
+                                            });
+                                            const picked = Array.isArray(selected)
+                                                ? selected.filter((p) => typeof p === 'string') as string[]
+                                                : (typeof selected === 'string' ? [selected] : []);
+                                            if (picked.length === 0) return;
+
+                                            const cleanHeader = (val: any) => {
+                                                const s = String(val ?? '').trim();
+                                                return s.replace(/^['"`]/, '').replace(/['"`]$/, '');
+                                            };
+
+                                            const newlyLoaded: UploadedFileInfo[] = [];
+                                            for (const path of picked) {
+                                                const res = await sendCommand('LOAD', { path }, true) as any;
+                                                if (!res || res.status !== 'ok') {
+                                                    addLog(`❌ Error loading ${path}: ${res?.message || 'Unknown error'}`);
+                                                    continue;
+                                                }
+                                                const cols = Array.isArray(res.columns) ? res.columns.map((c: any) => cleanHeader(c)) : [];
+                                                const suggested = res.suggested_mapping || {};
+                                                const dataType = baseDataType || 'gene';
+                                                newlyLoaded.push({
+                                                    path: res.path || path,
+                                                    columns: cols,
+                                                    preview: Array.isArray(res.preview) ? res.preview : [],
+                                                    suggestedMapping: {
+                                                        gene: suggested.gene ? cleanHeader(suggested.gene) : undefined,
+                                                        value: suggested.value ? cleanHeader(suggested.value) : undefined,
+                                                        pvalue: suggested.pvalue ? cleanHeader(suggested.pvalue) : undefined,
+                                                    },
+                                                    dataType,
+                                                });
+                                            }
+
+                                            if (newlyLoaded.length === 0) return;
+                                            handleUploadSuccess({ files: newlyLoaded });
+                                        } catch (err) {
+                                            console.error('Add files failed:', err);
+                                        }
+                                    }}
+                                >
+                                    + Add Files
+                                </button>
+                            </div>
                         </div>
 
                         <div className="mapping-grid">
@@ -338,7 +550,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             <div className="mapping-card">
                                 <label className="mapping-label">
                                     <span>Entity / Gene column</span>
-                                    {fileInfo.suggestedMapping.gene && <span className="badge-auto">Auto</span>}
+                                    {uploadedFiles[0].suggestedMapping.gene && <span className="badge-auto">Auto</span>}
                                 </label>
                                 <select
                                     value={selectedGeneCol}
@@ -346,7 +558,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                     className="select-input"
                                 >
                                     <option value="">Select Column...</option>
-                                    {fileInfo.columns.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {uploadedFiles[0].columns.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                                 <p className="mapping-hint">Required. Contains Gene Symbols or IDs.</p>
                             </div>
@@ -355,7 +567,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             <div className="mapping-card">
                                 <label className="mapping-label">
                                     <span>Value / Log2FC column</span>
-                                    {fileInfo.suggestedMapping.value && <span className="badge-auto">Auto</span>}
+                                    {uploadedFiles[0].suggestedMapping.value && <span className="badge-auto">Auto</span>}
                                 </label>
                                 {isRawMatrix ? (
                                     <>
@@ -388,7 +600,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                                 <div className="raw-select-column">
                                                     <div className="raw-select-title">Control columns</div>
                                                     <div className="raw-select-list">
-                                                        {fileInfo.columns.map((c) => {
+                                                        {uploadedFiles[0].columns.map((c) => {
                                                             const checked = manualControlCols.includes(c);
                                                             return (
                                                                 <label key={`ctrl-${c}`} className="raw-select-option">
@@ -409,7 +621,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                                 <div className="raw-select-column">
                                                     <div className="raw-select-title">Experiment columns</div>
                                                     <div className="raw-select-list">
-                                                        {fileInfo.columns.map((c) => {
+                                                        {uploadedFiles[0].columns.map((c) => {
                                                             const checked = manualTreatCols.includes(c);
                                                             return (
                                                                 <label key={`treat-${c}`} className="raw-select-option">
@@ -437,7 +649,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                             className="select-input"
                                         >
                                             <option value="">Select Column...</option>
-                                            {fileInfo.columns.map(c => <option key={c} value={c}>{c}</option>)}
+                                            {uploadedFiles[0].columns.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         <p className="mapping-hint">Required. Fold Change or Expression.</p>
                                     </>
@@ -448,7 +660,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             <div className="mapping-card">
                                 <label className="mapping-label">
                                     <span>P-value column (optional)</span>
-                                    {fileInfo.suggestedMapping.pvalue && <span className="badge-auto">Auto</span>}
+                                    {uploadedFiles[0].suggestedMapping.pvalue && <span className="badge-auto">Auto</span>}
                                 </label>
                                 <select
                                     value={selectedPValueCol}
@@ -456,7 +668,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                     className="select-input"
                                 >
                                     <option value="">(None)</option>
-                                    {fileInfo.columns.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {uploadedFiles[0].columns.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                                 <p className="mapping-hint">Optional. Enables Volcano Plot interactvity.</p>
                             </div>
@@ -528,7 +740,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                 <table className="preview-table">
                                     <thead>
                                         <tr>
-                                            {fileInfo.columns.map(col => {
+                                            {uploadedFiles[0].columns.map(col => {
                                                 let highlight = '';
                                                 if (col === selectedGeneCol) highlight = 'col-gene';
                                                 else if (col === selectedValueCol) highlight = 'col-value';
@@ -539,11 +751,11 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {fileInfo.preview.slice(0, 5).map((row, i) => (
+                                        {uploadedFiles[0].preview.slice(0, 5).map((row, i) => (
                                             <tr key={i}>
                                                 {row.map((cell, j) => {
                                                     let highlight = '';
-                                                    const col = fileInfo.columns[j];
+                                                    const col = uploadedFiles[0].columns[j];
                                                     if (col === selectedGeneCol) highlight = 'col-gene';
                                                     else if (col === selectedValueCol) highlight = 'col-value';
                                                     else if (col === selectedPValueCol) highlight = 'col-pvalue';
@@ -583,7 +795,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                 )}
 
                 {/* STEP 3: PATHWAY */}
-                {step === 3 && (
+                {step === 3 && uploadedFiles && uploadedFiles.length > 0 && (
                     <div className="step-wrapper">
                         <div className="section-header">
                             <h3>Select Pathway</h3>
@@ -594,7 +806,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             <TemplatePicker
                                 onSelect={handlePathwaySelect}
                                 disabled={!isConnected}
-                                dataType={fileInfo?.dataType || 'gene'}
+                                dataType={uploadedFiles[0].dataType || 'gene'}
                             />
                         </div>
 
@@ -607,7 +819,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                             </button>
                             <button
                                 onClick={handleVisualizeClick}
-                                disabled={!selectedPathway || !fileInfo || !mapping}
+                                disabled={!selectedPathway || !uploadedFiles || uploadedFiles.length === 0 || !mapping}
                                 className="btn-primary"
                             >
                                 Run analysis & visualize

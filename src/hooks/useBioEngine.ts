@@ -5,16 +5,19 @@
  * It handles event listening, command sending, and automatic cleanup.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 /** Response structure from the Python sidecar */
 export interface SidecarResponse {
     status: string;
+    request_id?: string;
+    cmd?: string;
     message?: string;
     data?: unknown;
     error?: string;
+    [key: string]: unknown;
 }
 
 /** Hook return type */
@@ -53,6 +56,14 @@ export function useBioEngine(): UseBioEngineReturn {
     const [lastResponse, setLastResponse] = useState<SidecarResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
 
+    type PendingRequest = {
+        resolve: (response: SidecarResponse) => void;
+        reject: (error: Error) => void;
+        timeoutId: ReturnType<typeof setTimeout>;
+        cmd: string;
+    };
+    const pendingRequestsRef = useRef<Map<string, PendingRequest>>(new Map());
+
     // Set up event listeners
     useEffect(() => {
         let unlistenOutput: UnlistenFn | undefined;
@@ -78,6 +89,39 @@ export function useBioEngine(): UseBioEngineReturn {
 
                         setLastResponse(response);
                         setError(null);
+
+                        // Resolve any pending waiter for this request_id
+                        const requestId = typeof response.request_id === 'string' ? response.request_id : null;
+                        if (requestId) {
+                            const pending = pendingRequestsRef.current.get(requestId);
+                            if (pending) {
+                                if (response.status === 'ok' || response.status === 'error') {
+                                    clearTimeout(pending.timeoutId);
+                                    pendingRequestsRef.current.delete(requestId);
+                                    if (response.status === 'error') {
+                                        pending.reject(new Error(response.message || 'Unknown error from backend'));
+                                    } else {
+                                        pending.resolve(response);
+                                    }
+                                }
+                            }
+                        } else if (response.status === 'ok' || response.status === 'error') {
+                            // Backward compatibility: older sidecars don't echo request_id.
+                            // If there's exactly one in-flight request, assume this response is for it.
+                            if (pendingRequestsRef.current.size === 1) {
+                                const first = pendingRequestsRef.current.entries().next().value as [string, PendingRequest] | undefined;
+                                if (first) {
+                                    const [fallbackId, pending] = first;
+                                    clearTimeout(pending.timeoutId);
+                                    pendingRequestsRef.current.delete(fallbackId);
+                                    if (response.status === 'error') {
+                                        pending.reject(new Error(response.message || 'Unknown error from backend'));
+                                    } else {
+                                        pending.resolve(response);
+                                    }
+                                }
+                            }
+                        }
 
                         // Check for ready status
                         if (response.status === 'ready') {
@@ -118,6 +162,13 @@ export function useBioEngine(): UseBioEngineReturn {
                 console.warn('[BioViz] Sidecar terminated:', event.payload);
                 setIsConnected(false);
                 setError(`Sidecar terminated: ${event.payload}`);
+
+                // Fail any pending requests immediately
+                for (const [requestId, pending] of pendingRequestsRef.current.entries()) {
+                    clearTimeout(pending.timeoutId);
+                    pending.reject(new Error(`Sidecar terminated while waiting for ${requestId}`));
+                }
+                pendingRequestsRef.current.clear();
             });
 
             // Check initial connection status
@@ -136,8 +187,27 @@ export function useBioEngine(): UseBioEngineReturn {
             unlistenOutput?.();
             unlistenError?.();
             unlistenTerminated?.();
+
+            for (const [, pending] of pendingRequestsRef.current.entries()) {
+                clearTimeout(pending.timeoutId);
+                pending.reject(new Error('useBioEngine unmounted while waiting for response'));
+            }
+            pendingRequestsRef.current.clear();
         };
     }, []);
+
+    const createRequestId = () => {
+        try {
+            // Available in modern browsers / Tauri WebView.
+            if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+                // @ts-ignore
+                return crypto.randomUUID();
+            }
+        } catch {
+            // ignore
+        }
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    };
 
     /**
      * Send a command to the Python sidecar
@@ -151,56 +221,58 @@ export function useBioEngine(): UseBioEngineReturn {
         setIsLoading(true);
         setError(null);
 
-        // Create a temporary listener promise if waiting
-        let responsePromise: Promise<SidecarResponse> | null = null;
-        if (waitForResponse) {
-            responsePromise = new Promise((resolve, reject) => {
-                listen<string>('sidecar-output', (event) => {
-                    try {
-                        const payload = event.payload ?? '';
-                        // Handle multiline output JSON
-                        const lines = payload.split(/\r?\n/);
-                        for (const line of lines) {
-                            if (!line.trim()) continue;
-                            const response = JSON.parse(line) as SidecarResponse;
-                            // Simple correlation: if we are waiting, take the first valid JSON as THE response.
-                            // Ideally we'd match a request ID, but the protocol doesn't have one yet.
-                            resolve(response);
-                            return; // Stop processing this event
-                        }
-                    } catch (err) {
-                        // Ignore parse errors here, global listener handles them
-                    }
-                });
-
-                // Timeout fallback
-                setTimeout(() => reject(new Error("Timeout waiting for sidecar response")), 10000);
-
-                // Clean up listener? 'once' would be better but listen returns unlisten fn promise.
-                // This quick implementation relies on the fact that we await invoke below.
-                // Ideally: unlisten inside resolve.
-                // For now, simple implementation.
-            });
-        }
-
+        const requestId = waitForResponse ? createRequestId() : undefined;
 
         try {
+            let responsePromise: Promise<SidecarResponse> | null = null;
+
+            if (waitForResponse && requestId) {
+                const timeoutMs = (() => {
+                    const upper = cmd.toUpperCase();
+                    if (upper === 'ANALYZE') return 600_000;
+                    if (upper === 'LOAD') return 600_000;
+                    if (upper === 'DOWNLOAD_PATHWAY') return 120_000;
+                    if (upper === 'SEARCH_PATHWAY') return 30_000;
+                    return 60_000;
+                })();
+
+                responsePromise = new Promise<SidecarResponse>((resolve, reject) => {
+                    const startedAt = Date.now();
+                    const timeoutId = setTimeout(() => {
+                        pendingRequestsRef.current.delete(requestId);
+                        const elapsed = Date.now() - startedAt;
+                        reject(new Error(`Timeout waiting for sidecar response (cmd=${cmd}, request_id=${requestId}, ms=${elapsed})`));
+                    }, timeoutMs);
+
+                    pendingRequestsRef.current.set(requestId, {
+                        resolve,
+                        reject,
+                        timeoutId,
+                        cmd,
+                    });
+                });
+            }
+
             const payload = JSON.stringify({
                 cmd,
                 payload: data || {},
+                ...(requestId ? { request_id: requestId } : {}),
             });
 
             await invoke('send_command', { payload });
 
             if (waitForResponse && responsePromise) {
                 const res = await responsePromise;
-                // If response status is error, throw
-                if (res.status === 'error') {
-                    throw new Error(res.message || "Unknown error from backend");
-                }
                 return res;
             }
         } catch (e) {
+            if (requestId) {
+                const pending = pendingRequestsRef.current.get(requestId);
+                if (pending) {
+                    clearTimeout(pending.timeoutId);
+                    pendingRequestsRef.current.delete(requestId);
+                }
+            }
             const errorMsg = e instanceof Error ? e.message : String(e);
             setError(errorMsg);
             console.error('[BioViz] Failed to send command:', e);

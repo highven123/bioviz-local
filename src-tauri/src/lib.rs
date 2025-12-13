@@ -7,6 +7,7 @@ use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+use std::path::PathBuf;
 
 /// Application state holding the Python subprocess handle
 pub struct AppState {
@@ -155,7 +156,36 @@ fn cleanup_sidecar(state: State<'_, AppState>) {
 
 /// Spawn the Python sidecar process using Tauri's shell plugin
 fn spawn_sidecar(app_handle: &AppHandle, state: &State<'_, AppState>) -> Result<(), String> {
-    // Use Tauri's sidecar command
+    // In dev builds, prefer running the Python source directly so backend edits take effect
+    // without rebuilding the PyInstaller sidecar binary.
+    #[cfg(debug_assertions)]
+    let sidecar_command = {
+        let repo_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf();
+        let script = repo_root.join("python").join("bio_engine.py");
+
+        if script.exists() {
+            let python = if cfg!(target_os = "windows") { "python" } else { "python3" };
+            println!(
+                "[BioViz] Dev mode: spawning Python engine from source: {}",
+                script.display()
+            );
+            app_handle
+                .shell()
+                .command(python)
+                .args([script.to_string_lossy().to_string()])
+                .env("BIOVIZ_USE_SOURCE", "1")
+        } else {
+            app_handle
+                .shell()
+                .sidecar("bio-engine")
+                .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+        }
+    };
+
+    #[cfg(not(debug_assertions))]
     let sidecar_command = app_handle
         .shell()
         .sidecar("bio-engine")

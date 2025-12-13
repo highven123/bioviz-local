@@ -36,10 +36,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(line_buffering=True)
 
+# --- Request context (for correlating async frontend calls) ---
+# The engine is single-threaded, so a simple global context works.
+CURRENT_REQUEST_ID: Optional[str] = None
+CURRENT_CMD: Optional[str] = None
+
 
 def send_response(data: Dict[str, Any]) -> None:
     """Send a JSON response to stdout and flush immediately."""
     try:
+        # Attach request correlation info when available.
+        # This keeps backward compatibility for clients that ignore these fields.
+        if CURRENT_REQUEST_ID is not None and "request_id" not in data:
+            data["request_id"] = CURRENT_REQUEST_ID
+        if CURRENT_CMD is not None and "cmd" not in data:
+            data["cmd"] = CURRENT_CMD
         json_str = json.dumps(data, ensure_ascii=False)
         print(json_str, flush=True)
     except Exception as e:
@@ -188,6 +199,54 @@ TREAT_PATTERNS = [
     'stim', 'case', 'exp', 'expr', 'experiment', 'experimental', 'trt'
 ]
 
+def _guess_gene_header(headers: List[str]) -> Optional[str]:
+    """
+    Try to guess the gene/protein/cell column by header keywords.
+    This is a lightweight fallback when the user-selected column
+    is missing in a specific file (e.g., GeneName vs Gene).
+    """
+    if not headers:
+        return None
+    candidates: List[str] = []
+    keywords = ['gene', 'symbol', 'name', 'id', 'identifier', 'accession', 'cell', 'protein', 'uniprot']
+    for h in headers:
+        h_lower = str(h).lower()
+        if any(k in h_lower for k in keywords):
+            candidates.append(h)
+    if candidates:
+        # Prefer columns that explicitly mention gene/symbol/name
+        def _score(col: str) -> int:
+            l = col.lower()
+            score = 0
+            if 'gene' in l or 'symbol' in l:
+                score += 3
+            if 'name' in l:
+                score += 2
+            if 'id' in l or 'accession' in l:
+                score -= 1
+            return score
+        candidates.sort(key=_score, reverse=True)
+        return candidates[0]
+    return None
+
+
+def _guess_value_header(headers: List[str]) -> Optional[str]:
+    """
+    Guess the value / logFC column by header keywords.
+    """
+    if not headers:
+        return None
+    keywords = [
+        'logfc', 'log2fc', 'log fc', 'log2 fold', 'fold change', 'foldchange', 'fc',
+        'ratio', 'log2ratio', 'log2_ratio', 'expression', 'expr', 'value', 'intensity',
+        'score', 'abundance'
+    ]
+    for h in headers:
+        h_lower = str(h).lower()
+        if any(k in h_lower for k in keywords):
+            return h
+    return None
+
 
 def looks_like_logfc(col_name: Optional[str]) -> bool:
     """Heuristic: column name suggests it already stores log2 fold-change."""
@@ -275,8 +334,9 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
     is_processed = path != original_path
     
     try:
-        data = []
-        columns = []
+        columns: List[str] = []
+        preview: List[List[str]] = []
+        total_rows: Optional[int] = None
         
         # Read file based on extension
         if path.lower().endswith(('.xlsx', '.xls')):
@@ -284,17 +344,25 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
                 import openpyxl
                 wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
                 ws = wb.active
-                rows = list(ws.iter_rows(values_only=True))
-                
-                if not rows:
-                     return {"status": "error", "message": "File is empty"}
-                     
-                columns = [str(c) if c is not None else '' for c in rows[0]]
-                # Slice first 5 rows for preview (excluding header)
-                data_rows = rows[1:6] if len(rows) > 1 else []
-                # Simple string conversion for all data
-                preview = [[str(cell) if cell is not None else '' for cell in row] for row in data_rows]
-                total_rows = len(rows) - 1
+
+                rows_iter = ws.iter_rows(values_only=True)
+                header_row = next(rows_iter, None)
+                if not header_row:
+                    return {"status": "error", "message": "File is empty"}
+
+                columns = [str(c) if c is not None else '' for c in header_row]
+                for _ in range(5):
+                    row = next(rows_iter, None)
+                    if row is None:
+                        break
+                    preview.append([str(cell) if cell is not None else '' for cell in row])
+
+                # Avoid scanning the entire workbook for row count (can be slow for large files).
+                try:
+                    if isinstance(ws.max_row, int) and ws.max_row >= 1:
+                        total_rows = max(ws.max_row - 1, 0)
+                except Exception:
+                    total_rows = None
                 
             except ImportError:
                  return {"status": "error", "message": "openpyxl module not found. Please pip install openpyxl"}
@@ -340,12 +408,9 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
                         preview.append(row)
                     except StopIteration:
                         break
-                 
-                # Let's count quickly
-                total_rows = len(preview) # at least this many
-                # Continue reading to count (might be slow for huge files, but safe for now)
-                for _ in reader:
-                    total_rows += 1
+
+                # Avoid scanning the entire file for row count (can be very slow for large CSV/TSV).
+                total_rows = None
 
         else:
             return {"status": "error", "message": "Unsupported file format. Use .xlsx, .xls, .csv, or .tsv"}
@@ -503,9 +568,13 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif any(k in joined_headers for k in ['cell type', 'flow', 'fcs']):
             data_type_guess = "cell"
 
+        message = "Successfully loaded file"
+        if isinstance(total_rows, int):
+            message = f"Successfully loaded {total_rows} rows"
+
         return {
             "status": "ok",
-            "message": f"Successfully loaded {total_rows} rows",
+            "message": message,
             "path": path,  # Return the potentially modified path
             "rows": total_rows,
             "columns": columns,
@@ -583,10 +652,25 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
                 headers = [str(c) if c is not None else '' for c in rows[0]]
                 try:
                     gene_idx = headers.index(gene_col)
-                    value_idx = headers.index(value_col)
-                    pvalue_idx = headers.index(pvalue_col) if pvalue_col and pvalue_col in headers else None
                 except ValueError:
-                    return {"status": "error", "message": f"Column not found in headers: {headers}"}
+                    guessed = _guess_gene_header(headers)
+                    if guessed and guessed in headers:
+                        gene_idx = headers.index(guessed)
+                        print(f"[BioEngine] Gene column '{gene_col}' not found. Using '{guessed}' instead.", file=sys.stderr)
+                    else:
+                        return {"status": "error", "message": f"Gene column '{gene_col}' not found in headers: {headers}"}
+
+                try:
+                    value_idx = headers.index(value_col)
+                except ValueError:
+                    guessed_val = _guess_value_header(headers)
+                    if guessed_val and guessed_val in headers:
+                        value_idx = headers.index(guessed_val)
+                        print(f"[BioEngine] Value column '{value_col}' not found. Using '{guessed_val}' instead.", file=sys.stderr)
+                    else:
+                        return {"status": "error", "message": f"Value column '{value_col}' not found in headers: {headers}"}
+
+                pvalue_idx = headers.index(pvalue_col) if pvalue_col and pvalue_col in headers else None
 
                 # XLS(X) 目前仅支持 summary 模式
                 for row in rows[1:]:
@@ -636,10 +720,24 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
                 try:
                     gene_idx = headers.index(gene_col)
                 except ValueError:
-                    return {"status": "error", "message": f"Gene column '{gene_col}' not found in headers: {headers}"}
+                    guessed = _guess_gene_header(headers)
+                    if guessed and guessed in headers:
+                        gene_idx = headers.index(guessed)
+                        print(f"[BioEngine] Gene column '{gene_col}' not found. Using '{guessed}' instead.", file=sys.stderr)
+                    else:
+                        return {"status": "error", "message": f"Gene column '{gene_col}' not found in headers: {headers}"}
 
                 # Optional indices for summary-mode mapping
-                value_idx = headers.index(value_col) if value_col in headers else None
+                if value_col in headers:
+                    value_idx = headers.index(value_col)
+                else:
+                    guessed_val = _guess_value_header(headers)
+                    if guessed_val and guessed_val in headers:
+                        value_idx = headers.index(guessed_val)
+                        print(f"[BioEngine] Value column '{value_col}' not found. Using '{guessed_val}' instead.", file=sys.stderr)
+                    else:
+                        value_idx = None
+
                 pvalue_idx = headers.index(pvalue_col) if pvalue_col and pvalue_col in headers else None
 
                 # Optional mean-expression column for summary tables (e.g. DESeq2 BaseMean)
@@ -1021,10 +1119,14 @@ def handle_load_analysis(payload: Dict[str, Any]) -> None:
 
 def process_command(command_obj: Dict[str, Any]) -> None:
     """Route command to appropriate handler."""
+    global CURRENT_REQUEST_ID, CURRENT_CMD
     try:
         # command_obj is already a dict from main
         cmd = command_obj.get("cmd", "").upper() # Use 'cmd' as per existing protocol
         payload = command_obj.get("payload", {}) # Use 'payload' for consistency
+        request_id = command_obj.get("request_id")
+        CURRENT_REQUEST_ID = str(request_id) if request_id is not None else None
+        CURRENT_CMD = cmd or None
 
         # Handlers that return a dict (old style)
         return_handlers = {
@@ -1060,6 +1162,10 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         send_error(f"Invalid JSON: {str(e)}")
     except Exception as e:
         send_error(f"System error: {str(e)}", details={"traceback": traceback.format_exc()})
+    finally:
+        # Always clear context after handling one command to avoid leaking into later responses.
+        CURRENT_REQUEST_ID = None
+        CURRENT_CMD = None
 
 
 

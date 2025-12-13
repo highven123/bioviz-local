@@ -412,3 +412,66 @@
     box-shadow: none;
     transform: none;
 }
+
+/* Selected file list (batch mode) */
+.file-list-card {
+    background: var(--bg-panel);
+    padding: 16px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--border-subtle);
+}
+
+.file-list-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.file-list-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.file-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid var(--border-subtle);
+}
+
+.file-list-name {
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-list-remove {
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-dim);
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.file-list-remove:hover {
+    border-color: rgba(239, 68, 68, 0.6);
+    color: rgba(239, 68, 68, 0.95);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.file-list-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
