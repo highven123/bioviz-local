@@ -8,7 +8,7 @@ interface FileDropZoneProps {
         filePath: string;
         columns: string[];
         preview: string[][];
-        suggestedMapping: { gene?: string; value?: string };
+        suggestedMapping: { gene?: string; value?: string; pvalue?: string };
         dataType: 'gene' | 'protein' | 'cell';
     }) => void;
     addLog: (message: string) => void;
@@ -80,11 +80,22 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({ onLoadSuccess, addLo
                     addLog('🔄 Wide matrix detected and transposed');
                 }
 
+                const cleanHeader = (val: any) => {
+                    const s = String(val ?? '').trim();
+                    return s.replace(/^['"`]/, '').replace(/['"`]$/, '');
+                };
+                const cleanedColumns = (response.columns || []).map((c: any) => cleanHeader(c));
+                const suggested = response.suggested_mapping || {};
+
                 onLoadSuccess({
                     filePath: response.path || filePath,
-                    columns: response.columns || [],
+                    columns: cleanedColumns,
                     preview: response.preview || [],
-                    suggestedMapping: response.suggested_mapping || {},
+                    suggestedMapping: {
+                        gene: suggested.gene ? cleanHeader(suggested.gene) : undefined,
+                        value: suggested.value ? cleanHeader(suggested.value) : undefined,
+                        pvalue: suggested.pvalue ? cleanHeader(suggested.pvalue) : undefined
+                    },
                     dataType: dataType
                 });
             } else {

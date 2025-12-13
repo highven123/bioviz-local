@@ -1,0 +1,1106 @@
+{
+    "id": "hsa04066",
+    "name": "HIF-1 signaling pathway",
+    "description": "Imported from KEGG: HIF-1 signaling pathway",
+    "nodes": [
+        {
+            "id": "6",
+            "name": "CUL2",
+            "kegg_id": "hsa:8453",
+            "x": 746,
+            "y": 265,
+            "category": "Gene",
+            "internal_id": "6"
+        },
+        {
+            "id": "7",
+            "name": "RBX1",
+            "kegg_id": "hsa:9978",
+            "x": 746,
+            "y": 248,
+            "category": "Gene",
+            "internal_id": "7"
+        },
+        {
+            "id": "8",
+            "name": "ELOB",
+            "kegg_id": "hsa:6923",
+            "x": 700,
+            "y": 282,
+            "category": "Gene",
+            "internal_id": "8"
+        },
+        {
+            "id": "9",
+            "name": "ELOC",
+            "kegg_id": "hsa:6921",
+            "x": 700,
+            "y": 265,
+            "category": "Gene",
+            "internal_id": "9"
+        },
+        {
+            "id": "10",
+            "name": "VEGFA",
+            "kegg_id": "hsa:7422",
+            "x": 1099,
+            "y": 363,
+            "category": "Gene",
+            "internal_id": "10"
+        },
+        {
+            "id": "11",
+            "name": "EGLN2",
+            "kegg_id": "hsa:112398 hsa:112399 hsa:54583",
+            "x": 688,
+            "y": 351,
+            "category": "Gene",
+            "internal_id": "11"
+        },
+        {
+            "id": "12",
+            "name": "VHL",
+            "kegg_id": "hsa:7428",
+            "x": 700,
+            "y": 248,
+            "category": "Gene",
+            "internal_id": "12"
+        },
+        {
+            "id": "13",
+            "name": "ARNT",
+            "kegg_id": "hsa:405",
+            "x": 947,
+            "y": 417,
+            "category": "Gene",
+            "internal_id": "13"
+        },
+        {
+            "id": "14",
+            "name": "CREBBP",
+            "kegg_id": "hsa:1387 hsa:2033",
+            "x": 959,
+            "y": 485,
+            "category": "Gene",
+            "internal_id": "14"
+        },
+        {
+            "id": "15",
+            "name": "HIF1A",
+            "kegg_id": "hsa:3091",
+            "x": 550,
+            "y": 379,
+            "category": "Gene",
+            "internal_id": "15"
+        },
+        {
+            "id": "16",
+            "name": "SLC2A1",
+            "kegg_id": "hsa:6513",
+            "x": 1099,
+            "y": 615,
+            "category": "Gene",
+            "internal_id": "16"
+        },
+        {
+            "id": "17",
+            "name": "EGF",
+            "kegg_id": "hsa:1950 hsa:3479 hsa:3630",
+            "x": 87,
+            "y": 272,
+            "category": "Gene",
+            "internal_id": "17"
+        },
+        {
+            "id": "32",
+            "name": "EGFR",
+            "kegg_id": "hsa:1956 hsa:2064 hsa:3480 hsa:3643",
+            "x": 169,
+            "y": 272,
+            "category": "Gene",
+            "internal_id": "32"
+        },
+        {
+            "id": "33",
+            "name": "P3R3URF-PIK3R3",
+            "kegg_id": "hsa:110117499 hsa:5290 hsa:5291 hsa:5293 hsa:5295 hsa:5296 hsa:8503",
+            "x": 260,
+            "y": 310,
+            "category": "Gene",
+            "internal_id": "33"
+        },
+        {
+            "id": "34",
+            "name": "AKT3",
+            "kegg_id": "hsa:10000 hsa:207 hsa:208",
+            "x": 260,
+            "y": 353,
+            "category": "Gene",
+            "internal_id": "34"
+        },
+        {
+            "id": "35",
+            "name": "MTOR",
+            "kegg_id": "hsa:2475",
+            "x": 333,
+            "y": 353,
+            "category": "Gene",
+            "internal_id": "35"
+        },
+        {
+            "id": "39",
+            "name": "CYBB",
+            "kegg_id": "hsa:1536",
+            "x": 336,
+            "y": 563,
+            "category": "Gene",
+            "internal_id": "39"
+        },
+        {
+            "id": "40",
+            "name": "PLCG1",
+            "kegg_id": "hsa:5335 hsa:5336",
+            "x": 421,
+            "y": 526,
+            "category": "Gene",
+            "internal_id": "40"
+        },
+        {
+            "id": "41",
+            "name": "PRKCA",
+            "kegg_id": "hsa:5578 hsa:5579 hsa:5582",
+            "x": 421,
+            "y": 433,
+            "category": "Gene",
+            "internal_id": "41"
+        },
+        {
+            "id": "42",
+            "name": "C00165",
+            "kegg_id": "cpd:C00165",
+            "x": 420,
+            "y": 477,
+            "category": "Compound",
+            "internal_id": "42"
+        },
+        {
+            "id": "43",
+            "name": "C01245",
+            "kegg_id": "cpd:C01245",
+            "x": 515,
+            "y": 480,
+            "category": "Compound",
+            "internal_id": "43"
+        },
+        {
+            "id": "44",
+            "name": "C00704",
+            "kegg_id": "cpd:C00704",
+            "x": 422,
+            "y": 563,
+            "category": "Compound",
+            "internal_id": "44"
+        },
+        {
+            "id": "53",
+            "name": "SLC2A1",
+            "kegg_id": "hsa:6513",
+            "x": 171,
+            "y": 710,
+            "category": "Gene",
+            "internal_id": "53"
+        },
+        {
+            "id": "54",
+            "name": "LDHAL6A",
+            "kegg_id": "hsa:160287 hsa:3939 hsa:3945 hsa:3948 hsa:92483",
+            "x": 1099,
+            "y": 809,
+            "category": "Gene",
+            "internal_id": "54"
+        },
+        {
+            "id": "55",
+            "name": "PDK1",
+            "kegg_id": "hsa:5163",
+            "x": 1099,
+            "y": 652,
+            "category": "Gene",
+            "internal_id": "55"
+        },
+        {
+            "id": "56",
+            "name": "C00031",
+            "kegg_id": "cpd:C00031",
+            "x": 114,
+            "y": 708,
+            "category": "Compound",
+            "internal_id": "56"
+        },
+        {
+            "id": "57",
+            "name": "C00022",
+            "kegg_id": "cpd:C00022",
+            "x": 319,
+            "y": 711,
+            "category": "Compound",
+            "internal_id": "57"
+        },
+        {
+            "id": "58",
+            "name": "C00186",
+            "kegg_id": "cpd:C00186",
+            "x": 319,
+            "y": 865,
+            "category": "Compound",
+            "internal_id": "58"
+        },
+        {
+            "id": "60",
+            "name": "LDHAL6A",
+            "kegg_id": "hsa:160287 hsa:3939 hsa:3945 hsa:3948 hsa:92483",
+            "x": 353,
+            "y": 808,
+            "category": "Gene",
+            "internal_id": "60"
+        },
+        {
+            "id": "64",
+            "name": "C00024",
+            "kegg_id": "cpd:C00024",
+            "x": 502,
+            "y": 713,
+            "category": "Compound",
+            "internal_id": "64"
+        },
+        {
+            "id": "66",
+            "name": "PDHA1",
+            "kegg_id": "hsa:5160 hsa:5161 hsa:5162",
+            "x": 447,
+            "y": 695,
+            "category": "Gene",
+            "internal_id": "66"
+        },
+        {
+            "id": "67",
+            "name": "PDK1",
+            "kegg_id": "hsa:5163",
+            "x": 447,
+            "y": 653,
+            "category": "Gene",
+            "internal_id": "67"
+        },
+        {
+            "id": "75",
+            "name": "C00002",
+            "kegg_id": "cpd:C00002",
+            "x": 745,
+            "y": 712,
+            "category": "Compound",
+            "internal_id": "75"
+        },
+        {
+            "id": "77",
+            "name": "C00076",
+            "kegg_id": "cpd:C00076",
+            "x": 746,
+            "y": 483,
+            "category": "Compound",
+            "internal_id": "77"
+        },
+        {
+            "id": "78",
+            "name": "CAMK2A",
+            "kegg_id": "hsa:815 hsa:816 hsa:817 hsa:818",
+            "x": 811,
+            "y": 483,
+            "category": "Gene",
+            "internal_id": "78"
+        },
+        {
+            "id": "84",
+            "name": "HK1",
+            "kegg_id": "hsa:3098 hsa:3099 hsa:3101 hsa:80201",
+            "x": 1099,
+            "y": 688,
+            "category": "Gene",
+            "internal_id": "84"
+        },
+        {
+            "id": "85",
+            "name": "PFKL",
+            "kegg_id": "hsa:5211 hsa:5213 hsa:5214",
+            "x": 1160,
+            "y": 688,
+            "category": "Gene",
+            "internal_id": "85"
+        },
+        {
+            "id": "86",
+            "name": "GAPDH",
+            "kegg_id": "hsa:2597",
+            "x": 1099,
+            "y": 719,
+            "category": "Gene",
+            "internal_id": "86"
+        },
+        {
+            "id": "87",
+            "name": "ALDOA",
+            "kegg_id": "hsa:226 hsa:229 hsa:230",
+            "x": 1160,
+            "y": 719,
+            "category": "Gene",
+            "internal_id": "87"
+        },
+        {
+            "id": "88",
+            "name": "ENO1",
+            "kegg_id": "hsa:2023 hsa:2026 hsa:2027",
+            "x": 1099,
+            "y": 749,
+            "category": "Gene",
+            "internal_id": "88"
+        },
+        {
+            "id": "89",
+            "name": "PGK1",
+            "kegg_id": "hsa:5230 hsa:5232",
+            "x": 1160,
+            "y": 749,
+            "category": "Gene",
+            "internal_id": "89"
+        },
+        {
+            "id": "90",
+            "name": "PFKFB3",
+            "kegg_id": "hsa:5209",
+            "x": 1099,
+            "y": 778,
+            "category": "Gene",
+            "internal_id": "90"
+        },
+        {
+            "id": "93",
+            "name": "EPO",
+            "kegg_id": "hsa:2056",
+            "x": 1099,
+            "y": 294,
+            "category": "Gene",
+            "internal_id": "93"
+        },
+        {
+            "id": "94",
+            "name": "TF",
+            "kegg_id": "hsa:7018",
+            "x": 1099,
+            "y": 326,
+            "category": "Gene",
+            "internal_id": "94"
+        },
+        {
+            "id": "95",
+            "name": "TFRC",
+            "kegg_id": "hsa:7037",
+            "x": 1160,
+            "y": 326,
+            "category": "Gene",
+            "internal_id": "95"
+        },
+        {
+            "id": "96",
+            "name": "FLT1",
+            "kegg_id": "hsa:2321",
+            "x": 1160,
+            "y": 363,
+            "category": "Gene",
+            "internal_id": "96"
+        },
+        {
+            "id": "97",
+            "name": "EGF",
+            "kegg_id": "hsa:1950",
+            "x": 1099,
+            "y": 389,
+            "category": "Gene",
+            "internal_id": "97"
+        },
+        {
+            "id": "98",
+            "name": "SERPINE1",
+            "kegg_id": "hsa:5054",
+            "x": 1160,
+            "y": 389,
+            "category": "Gene",
+            "internal_id": "98"
+        },
+        {
+            "id": "99",
+            "name": "ANGPT1",
+            "kegg_id": "hsa:284 hsa:285 hsa:51378",
+            "x": 1099,
+            "y": 415,
+            "category": "Gene",
+            "internal_id": "99"
+        },
+        {
+            "id": "100",
+            "name": "TEK",
+            "kegg_id": "hsa:7010",
+            "x": 1160,
+            "y": 415,
+            "category": "Gene",
+            "internal_id": "100"
+        },
+        {
+            "id": "101",
+            "name": "TIMP1",
+            "kegg_id": "hsa:7076",
+            "x": 1099,
+            "y": 442,
+            "category": "Gene",
+            "internal_id": "101"
+        },
+        {
+            "id": "106",
+            "name": "EDN1",
+            "kegg_id": "hsa:1906",
+            "x": 1099,
+            "y": 483,
+            "category": "Gene",
+            "internal_id": "106"
+        },
+        {
+            "id": "107",
+            "name": "NOS2",
+            "kegg_id": "hsa:4843",
+            "x": 1160,
+            "y": 483,
+            "category": "Gene",
+            "internal_id": "107"
+        },
+        {
+            "id": "108",
+            "name": "NOS3",
+            "kegg_id": "hsa:4846",
+            "x": 1099,
+            "y": 510,
+            "category": "Gene",
+            "internal_id": "108"
+        },
+        {
+            "id": "109",
+            "name": "HMOX1",
+            "kegg_id": "hsa:3162",
+            "x": 1160,
+            "y": 510,
+            "category": "Gene",
+            "internal_id": "109"
+        },
+        {
+            "id": "110",
+            "name": "NPPA",
+            "kegg_id": "hsa:4878",
+            "x": 1099,
+            "y": 538,
+            "category": "Gene",
+            "internal_id": "110"
+        },
+        {
+            "id": "114",
+            "name": "TIMP1",
+            "kegg_id": "hsa:7076",
+            "x": 1099,
+            "y": 195,
+            "category": "Gene",
+            "internal_id": "114"
+        },
+        {
+            "id": "115",
+            "name": "LTBR",
+            "kegg_id": "hsa:4055",
+            "x": 1099,
+            "y": 221,
+            "category": "Gene",
+            "internal_id": "115"
+        },
+        {
+            "id": "119",
+            "name": "C00007",
+            "kegg_id": "cpd:C00007",
+            "x": 628,
+            "y": 788,
+            "category": "Compound",
+            "internal_id": "119"
+        },
+        {
+            "id": "120",
+            "name": "TLR4",
+            "kegg_id": "hsa:7099",
+            "x": 169,
+            "y": 156,
+            "category": "Gene",
+            "internal_id": "120"
+        },
+        {
+            "id": "121",
+            "name": "NFKB1",
+            "kegg_id": "hsa:4790 hsa:5970",
+            "x": 443,
+            "y": 158,
+            "category": "Gene",
+            "internal_id": "121"
+        },
+        {
+            "id": "123",
+            "name": "C00338",
+            "kegg_id": "cpd:C00338",
+            "x": 107,
+            "y": 154,
+            "category": "Compound",
+            "internal_id": "123"
+        },
+        {
+            "id": "126",
+            "name": "IFNG",
+            "kegg_id": "hsa:3458",
+            "x": 87,
+            "y": 196,
+            "category": "Gene",
+            "internal_id": "126"
+        },
+        {
+            "id": "127",
+            "name": "IFNGR1",
+            "kegg_id": "hsa:3459 hsa:3460",
+            "x": 169,
+            "y": 196,
+            "category": "Gene",
+            "internal_id": "127"
+        },
+        {
+            "id": "134",
+            "name": "IL6",
+            "kegg_id": "hsa:3569",
+            "x": 87,
+            "y": 125,
+            "category": "Gene",
+            "internal_id": "134"
+        },
+        {
+            "id": "135",
+            "name": "IL6R",
+            "kegg_id": "hsa:3570",
+            "x": 169,
+            "y": 125,
+            "category": "Gene",
+            "internal_id": "135"
+        },
+        {
+            "id": "136",
+            "name": "STAT3",
+            "kegg_id": "hsa:6774",
+            "x": 443,
+            "y": 126,
+            "category": "Gene",
+            "internal_id": "136"
+        },
+        {
+            "id": "142",
+            "name": "C00533",
+            "kegg_id": "cpd:C00533",
+            "x": 635,
+            "y": 395,
+            "category": "Compound",
+            "internal_id": "142"
+        },
+        {
+            "id": "147",
+            "name": "C00007",
+            "kegg_id": "cpd:C00007",
+            "x": 719,
+            "y": 394,
+            "category": "Compound",
+            "internal_id": "147"
+        },
+        {
+            "id": "148",
+            "name": "C14818",
+            "kegg_id": "cpd:C14818",
+            "x": 750,
+            "y": 386,
+            "category": "Compound",
+            "internal_id": "148"
+        },
+        {
+            "id": "149",
+            "name": "C00072",
+            "kegg_id": "cpd:C00072",
+            "x": 783,
+            "y": 374,
+            "category": "Compound",
+            "internal_id": "149"
+        },
+        {
+            "id": "150",
+            "name": "C00026",
+            "kegg_id": "cpd:C00026",
+            "x": 807,
+            "y": 356,
+            "category": "Compound",
+            "internal_id": "150"
+        },
+        {
+            "id": "152",
+            "name": "EIF4EBP1",
+            "kegg_id": "hsa:1978",
+            "x": 419,
+            "y": 315,
+            "category": "Gene",
+            "internal_id": "152"
+        },
+        {
+            "id": "153",
+            "name": "EIF4E",
+            "kegg_id": "hsa:1977 hsa:253314 hsa:9470",
+            "x": 491,
+            "y": 315,
+            "category": "Gene",
+            "internal_id": "153"
+        },
+        {
+            "id": "154",
+            "name": "RPS6KB1",
+            "kegg_id": "hsa:6198 hsa:6199",
+            "x": 420,
+            "y": 353,
+            "category": "Gene",
+            "internal_id": "154"
+        },
+        {
+            "id": "155",
+            "name": "RPS6",
+            "kegg_id": "hsa:6194",
+            "x": 492,
+            "y": 353,
+            "category": "Gene",
+            "internal_id": "155"
+        },
+        {
+            "id": "166",
+            "name": "MAPK1",
+            "kegg_id": "hsa:5594 hsa:5595",
+            "x": 335,
+            "y": 254,
+            "category": "Gene",
+            "internal_id": "166"
+        },
+        {
+            "id": "167",
+            "name": "MAP2K1",
+            "kegg_id": "hsa:5604 hsa:5605",
+            "x": 260,
+            "y": 254,
+            "category": "Gene",
+            "internal_id": "167"
+        },
+        {
+            "id": "168",
+            "name": "MKNK2",
+            "kegg_id": "hsa:2872 hsa:8569",
+            "x": 419,
+            "y": 254,
+            "category": "Gene",
+            "internal_id": "168"
+        },
+        {
+            "id": "177",
+            "name": "BCL2",
+            "kegg_id": "hsa:596",
+            "x": 1099,
+            "y": 845,
+            "category": "Gene",
+            "internal_id": "177"
+        },
+        {
+            "id": "178",
+            "name": "CDKN1A",
+            "kegg_id": "hsa:1026 hsa:1027",
+            "x": 1099,
+            "y": 870,
+            "category": "Gene",
+            "internal_id": "178"
+        },
+        {
+            "id": "180",
+            "name": "EPAS1",
+            "kegg_id": "hsa:2034",
+            "x": 550,
+            "y": 401,
+            "category": "Gene",
+            "internal_id": "180"
+        },
+        {
+            "id": "181",
+            "name": "undefined",
+            "kegg_id": "undefined",
+            "x": 723,
+            "y": 265,
+            "category": "Complex",
+            "internal_id": "181"
+        },
+        {
+            "id": "182",
+            "name": "undefined",
+            "kegg_id": "undefined",
+            "x": 754,
+            "y": 432,
+            "category": "Complex",
+            "internal_id": "182"
+        }
+    ],
+    "edges": [
+        {
+            "source": "134",
+            "target": "135",
+            "relation": "activation"
+        },
+        {
+            "source": "123",
+            "target": "120",
+            "relation": "activation"
+        },
+        {
+            "source": "126",
+            "target": "127",
+            "relation": "activation"
+        },
+        {
+            "source": "17",
+            "target": "32",
+            "relation": "activation"
+        },
+        {
+            "source": "167",
+            "target": "166",
+            "relation": "activation"
+        },
+        {
+            "source": "166",
+            "target": "168",
+            "relation": "activation"
+        },
+        {
+            "source": "33",
+            "target": "34",
+            "relation": "activation"
+        },
+        {
+            "source": "35",
+            "target": "154",
+            "relation": "activation"
+        },
+        {
+            "source": "154",
+            "target": "155",
+            "relation": "activation"
+        },
+        {
+            "source": "168",
+            "target": "153",
+            "relation": "activation"
+        },
+        {
+            "source": "44",
+            "target": "40",
+            "relation": "activation"
+        },
+        {
+            "source": "42",
+            "target": "41",
+            "relation": "activation"
+        },
+        {
+            "source": "41",
+            "target": "35",
+            "relation": "activation"
+        },
+        {
+            "source": "147",
+            "target": "11",
+            "relation": "activation"
+        },
+        {
+            "source": "148",
+            "target": "11",
+            "relation": "activation"
+        },
+        {
+            "source": "149",
+            "target": "11",
+            "relation": "activation"
+        },
+        {
+            "source": "150",
+            "target": "11",
+            "relation": "activation"
+        },
+        {
+            "source": "77",
+            "target": "78",
+            "relation": "activation"
+        },
+        {
+            "source": "78",
+            "target": "14",
+            "relation": "activation"
+        },
+        {
+            "source": "11",
+            "target": "15",
+            "relation": "activation"
+        },
+        {
+            "source": "181",
+            "target": "15",
+            "relation": "inhibition"
+        },
+        {
+            "source": "135",
+            "target": "136",
+            "relation": "activation"
+        },
+        {
+            "source": "120",
+            "target": "121",
+            "relation": "activation"
+        },
+        {
+            "source": "127",
+            "target": "121",
+            "relation": "activation"
+        },
+        {
+            "source": "41",
+            "target": "11",
+            "relation": "inhibition"
+        },
+        {
+            "source": "142",
+            "target": "11",
+            "relation": "inhibition"
+        },
+        {
+            "source": "166",
+            "target": "152",
+            "relation": "inhibition"
+        },
+        {
+            "source": "35",
+            "target": "152",
+            "relation": "inhibition"
+        },
+        {
+            "source": "67",
+            "target": "66",
+            "relation": "inhibition"
+        },
+        {
+            "source": "136",
+            "target": "15",
+            "relation": "activation"
+        },
+        {
+            "source": "121",
+            "target": "15",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "114",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "115",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "93",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "94",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "95",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "10",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "96",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "97",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "98",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "99",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "100",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "101",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "106",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "107",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "108",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "109",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "110",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "16",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "55",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "84",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "85",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "86",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "87",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "89",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "90",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "54",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "177",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "178",
+            "relation": "activation"
+        },
+        {
+            "source": "182",
+            "target": "88",
+            "relation": "activation"
+        },
+        {
+            "source": "32",
+            "target": "167",
+            "relation": "activation"
+        },
+        {
+            "source": "32",
+            "target": "33",
+            "relation": "activation"
+        },
+        {
+            "source": "34",
+            "target": "35",
+            "relation": "activation"
+        },
+        {
+            "source": "39",
+            "target": "44",
+            "relation": "activation"
+        },
+        {
+            "source": "40",
+            "target": "42",
+            "relation": "activation"
+        },
+        {
+            "source": "40",
+            "target": "43",
+            "relation": "activation"
+        },
+        {
+            "source": "152",
+            "target": "153",
+            "relation": "inhibition"
+        }
+    ],
+    "categories": {
+        "Gene": "#3498db",
+        "Compound": "#f1c40f",
+        "Complex": "#9b59b6",
+        "Unknown": "#95a5a6"
+    }
+}

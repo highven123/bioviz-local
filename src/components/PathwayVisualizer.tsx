@@ -823,10 +823,9 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
             refSlide.addText('References & Acknowledgements', sectionTitleStyle);
 
             refSlide.addText([
-                // { text: '1. Kanehisa, M. and Goto, S.; KEGG: Kyoto Encyclopedia of Genes and Genomes. Nucleic Acids Res. 28, 27-30 (2000).', options: { fontSize: 14, color: bodyColor, breakLine: true } },
                 { text: '1. BioViz Local: An advanced, secure, and beautiful pathway visualization tool.', options: { fontSize: 14, color: bodyColor, breakLine: true } },
-                { text: '\n\nOfficial Website:', options: { fontSize: 14, color: accentColor, bold: true, breakLine: true } },
-                { text: 'https://www.bioviz.com', options: { fontSize: 14, color: '#4ecdc4', underline: { style: 'sng' }, hyperlink: { url: 'https://www.bioviz.com' } } }
+                { text: '\n\nWeChat:', options: { fontSize: 14, color: accentColor, bold: true, breakLine: true } },
+                { text: 'bioviz', options: { fontSize: 14, color: '#4ecdc4' } }
             ], { x: 1.0, y: 1.5, w: 8.0, h: 4.0, lineSpacing: 25 });
             refSlide.addText(contactText, contactOptions);
             // Save

@@ -55,5 +55,11 @@ Thumbs.db
 # Generated files
 *.spec
 
+
 # Office Temp Files
 ~$*
+
+# Generated Sample Data
+sample_data/report_*
+sample_data/*_stat_*
+sample_data/*.svg

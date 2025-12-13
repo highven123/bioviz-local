@@ -1,0 +1,28 @@
+# BioViz Local 快速操作说明（极简版）
+
+## 1. 安装启动
+- 双击.exe 安装文件
+
+## 2. 四步流程
+1) **Import Data**：选数据类型（RNA/Protein/Flow），上传 `.csv/.tsv/.xlsx`。  
+
+2) **Map Columns**：  
+   - Summary 表：选实体列 + Log2FC/Value 列，可选 P-value 列。  
+   - 原始矩阵（有 Ctrl_* / Exp_*、无 P 值）：默认自动用所有 Ctrl/Exp 算 Log2FC/P 值；如需精细控制，切到 Manual 勾选具体 Ctrl/Exp 列。  
+
+3) **Select Pathway**：点选对应的通路，或 search online 搜索并下载对应的通路。
+
+4) **Visualize**：右下角Run analysis & visualize，展示通路。查看火山图/MA/表格/通路，点节点看右侧 Evidence。
+
+## 3. 工具栏
+- `Reset` 重置视角；`PNG/SVG/PPTX` 导出；`Data` 导出 CSV；`KEGG` 打开官方页面下载 PNG/PDF/KGML。
+
+## 4. 导出命名建议
+- 数据：`<上传文件名>_stat_<时间>.csv`
+- PPTX：`report_<上传文件名>_<时间>.pptx`
+- 图片：`png_<上传文件名>_<时间>` / `svg_<上传文件名>_<时间>`
+
+## 5. 按钮变灰的常见原因
+- Summary 模式未选实体列或 Value 列。  
+- 原始矩阵 Manual 模式未各选 1 个 Ctrl 和 1 个 Exp。  
+- 未选通路就想进入可视化。

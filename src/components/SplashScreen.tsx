@@ -46,6 +46,14 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onEnter }) => {
         alignItems: 'center',
         zIndex: 2
       }}>
+        <div style={{
+          marginBottom: '12px',
+          color: '#cbd5e1',
+          fontSize: '14px',
+          letterSpacing: '0.5px'
+        }}>
+          WeChat: bioviz
+        </div>
         <button
           onClick={onEnter}
           onMouseEnter={() => setIsHovered(true)}

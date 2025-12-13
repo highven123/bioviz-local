@@ -10,7 +10,7 @@ import { SplashScreen } from './components/SplashScreen'; // New Import
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { save, ask } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { writeTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 import './App.css';
 
 // ... (Types remain same) ...
@@ -149,7 +149,26 @@ function App() {
   }, [dragIdx, colSizes]);
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev.slice(-20), `[${timestamp}] ${message}`]);
+    const line = `[${timestamp}] ${message}`;
+    setLogs(prev => [...prev.slice(-20), line]);
+
+    // Persist a lightweight run log for debugging (user home dir)
+    const persistLog = async () => {
+      try {
+        await writeTextFile(
+          'bioviz_run.log',
+          line + '\n',
+          {
+            baseDir: BaseDirectory.AppData,
+            append: true,
+          }
+        );
+      } catch (e) {
+        // Ignore logging failures to avoid disrupting UX
+        console.warn('Run log write failed:', e);
+      }
+    };
+    void persistLog();
   };
 
   // --- BioEngine Response Handler ---

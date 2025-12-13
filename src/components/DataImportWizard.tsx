@@ -161,18 +161,36 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     const [manualControlCols, setManualControlCols] = useState<string[]>([]);
     const [manualTreatCols, setManualTreatCols] = useState<string[]>([]);
 
+    const [fileStamp, setFileStamp] = useState<string | null>(null);
+
+    // Initialize mapping defaults when a new file is loaded
     useEffect(() => {
         if (step === 2 && fileInfo) {
-            setSelectedGeneCol(fileInfo.suggestedMapping.gene || '');
-            setSelectedValueCol(fileInfo.suggestedMapping.value || '');
-            setSelectedPValueCol(fileInfo.suggestedMapping.pvalue || '');
+            if (fileInfo.path !== fileStamp) {
+                setFileStamp(fileInfo.path);
+                const columns = fileInfo.columns || [];
 
-            // Restore analysis methods from last config if the same file is reused
-            if (lastConfig && lastConfig.filePath === fileInfo.path && Array.isArray(lastConfig.analysisMethods)) {
-                setAnalysisMethods(lastConfig.analysisMethods.length > 0 ? lastConfig.analysisMethods : ['auto']);
+                const defaultGene = fileInfo.suggestedMapping.gene || columns[0] || '';
+
+                // Prefer suggested value; otherwise pick the first non-gene column if exists
+                let defaultValue = fileInfo.suggestedMapping.value || '';
+                if (!defaultValue) {
+                    defaultValue = columns.find(c => c !== defaultGene) || '';
+                }
+
+                setSelectedGeneCol(defaultGene);
+                setSelectedValueCol(defaultValue);
+                setSelectedPValueCol(fileInfo.suggestedMapping.pvalue || '');
+
+                // Restore analysis methods from last config if the same file is reused
+                if (lastConfig && lastConfig.filePath === fileInfo.path && Array.isArray(lastConfig.analysisMethods)) {
+                    setAnalysisMethods(lastConfig.analysisMethods.length > 0 ? lastConfig.analysisMethods : ['auto']);
+                } else {
+                    setAnalysisMethods(['auto']);
+                }
             }
         }
-    }, [step, fileInfo, lastConfig]);
+    }, [step, fileInfo, lastConfig, fileStamp]);
 
     // Detect "raw matrix" layout: multiple Ctrl_*/Exp_* columns, no P-value
     const rawMatrixInfo = useMemo(() => {
@@ -462,10 +480,16 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                         )}
 
                         {/* Analysis Method Selector (multi-select) */}
-                        <div className="mapping-card">
+                        <div className="mapping-card mapping-card-accent">
                             <label className="mapping-label">
-                                <span>⚙️ Analysis Methods</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span>⚙️ Analysis Methods</span>
+                                    <span className="badge-stats">Stats</span>
+                                </span>
                             </label>
+                            <p className="mapping-hint" style={{ marginTop: '-4px' }}>
+                                Default: automatic statistics. Raw matrices will compute Log2FC / approx P-value; tick options below if you already have results.
+                            </p>
                             <div className="analysis-methods-group">
                                 <label className="checkbox-row">
                                     <input
@@ -493,7 +517,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                 </label>
                             </div>
                             <p className="mapping-hint">
-                                可以勾选一个或多个统计方法；当前通路可视化仍使用第一个方法作为主结果。
+                                You can pick one or multiple methods; the first selected is used for visualization.
                             </p>
                         </div>
 

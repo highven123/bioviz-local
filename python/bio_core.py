@@ -321,7 +321,16 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
                 except StopIteration:
                      return {"status": "error", "message": "File is empty"}
                      
-                columns = [str(c).strip() for c in columns]
+                def _clean_header(val: Any) -> str:
+                    try:
+                        s = str(val).strip()
+                        # Remove wrapping quotes/backticks
+                        s = s.strip('"').strip("'").strip('`')
+                        return s
+                    except Exception:
+                        return str(val)
+
+                columns = [_clean_header(c) for c in columns]
                  
                 # Read first 5 rows for preview
                 preview = []
@@ -350,7 +359,8 @@ def handle_load(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Extended keywords for Entity column (Gene, Protein, Cell)
         entity_keywords = [
             # Generic/Gene
-            'gene', 'symbol', 'id', 'identifier', 'accession',
+            'gene', 'symbol', 'id', 'identifier', 'accession', 'entity',
+            'cellpopulation', 'population',
             # Cell
             'cell type', 'cellname', 'cell_name', 'cell', 'lineage', 'phenotype', 'cluster',
             # Protein
@@ -613,7 +623,15 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
                 except StopIteration:
                     return {"status": "error", "message": "File is empty"}
 
-                headers = [h.strip() for h in headers]
+                def _clean_header(val: Any) -> str:
+                    try:
+                        s = str(val).strip()
+                        s = s.strip('"').strip("'").strip('`')
+                        return s
+                    except Exception:
+                        return str(val)
+
+                headers = [_clean_header(h) for h in headers]
 
                 try:
                     gene_idx = headers.index(gene_col)
@@ -1338,43 +1356,17 @@ def download_kegg_pathway(pathway_id: str) -> Dict[str, Any]:
     # 3. Save to assets/templates
     # Determine save path based on execution environment
     try:
-        save_dir = None
-        
-        # If running from source (dev), save to source assets
-        # If running packaged, we might need a writable user data dir
-        # BUT user requested "update to templates".
-        # In a real packaged app, the bundle is READ-ONLY.
-        # We should really save to a user-writable Custom Templates folder.
-        # For this quick implementation/Dev mode, we try to find the source dir first?
-        # Or just return the JSON and let Frontend decide? 
-        # Requirement: "download to templates folder".
-        
-        # Let's try to locate the 'active' assets folder.
-        # In Dev: src/../assets/templates
-        # In Prod: We can't write to Program Files/App.app. 
-        # For now, let's just attempt to write to where we found other templates (mapper.py logic),
-        # but prioritize CWD or a writable location.
-        
-        # Simpler approach: Save to CWD/assets/templates or CWD.
-        # Ideally frontend passes the target path. 
-        # For now, let's infer 'local' dev path.
-        
-        possible_paths = [
-             Path(__file__).parent.parent / 'assets' / 'templates', # Dev
-             Path.cwd() / 'assets' / 'templates' # Standalone
-        ]
-        
-        target_dir = None
-        for p in possible_paths:
-            if p.exists():
-                target_dir = p
-                break
-                
-        if not target_dir:
-             # Create CWD assets
-             target_dir = Path.cwd() / 'assets' / 'templates'
-             target_dir.mkdir(parents=True, exist_ok=True)
-             
+        # Use user-writable location first
+        user_dir = Path.home() / '.bioviz_local' / 'templates'
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        # Dev path (if exists) for convenience
+        dev_dir = Path(__file__).parent.parent / 'assets' / 'templates'
+        target_dir = user_dir if user_dir.exists() else dev_dir
+        if dev_dir.exists():
+            # still prefer user dir to avoid writing into bundle
+            target_dir = user_dir
+
         file_path = target_dir / f"{pathway_id}.json"
         
         with open(file_path, 'w', encoding='utf-8') as f:

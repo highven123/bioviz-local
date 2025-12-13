@@ -30,6 +30,8 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
          search_paths.append(Path(sys._MEIPASS) / 'assets' / 'templates' / f'{pathway_id}.json')
 
     search_paths.extend([
+        # User-writable custom templates
+        Path.home() / '.bioviz_local' / 'templates' / f'{pathway_id}.json',
         # Development: relative to this file
         Path(__file__).parent.parent / 'assets' / 'templates' / f'{pathway_id}.json',
         # Packaged app: relative to executable

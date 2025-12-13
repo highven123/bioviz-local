@@ -1,204 +1,30 @@
-# 🎯 BioViz Local - 使用指南
+# BioViz Local 快速操作说明（极简版）
 
-## 📦 新版本更新
+## 1. 安装启动
+- 双击.exe 安装文件
 
-### 完整的交互式工作流 UI
+## 2. 四步流程
+1) **Import Data**：选数据类型（RNA/Protein/Flow），上传 `.csv/.tsv/.xlsx`。  
+2) **Map Columns**：  
+   - Summary 表：选实体列 + Log2FC/Value 列，可选 P-value 列。  
+   - 原始矩阵（有 Ctrl_* / Exp_*、无 P 值）：默认自动用所有 Ctrl/Exp 算 Log2FC/P 值；如需精细控制，切到 Manual 勾选具体 Ctrl/Exp 列。  
+3) **Select Pathway**：挑一个 KEGG 模板。  
+4) **Visualize**：查看火山图/MA/表格/通路，点节点看右侧 Evidence。
 
-现在 BioViz Local 包含完整的数据分析工作流：
+## 3. 工具栏
+- `Reset` 重置视角；`PNG/SVG/PPTX` 导出；`Data` 导出 CSV；`KEGG` 打开官方页面下载 PNG/PDF/KGML。
 
-1. **上传数据** - CSV/TSV 文件
-2. **选择通路** - 三条 KEGG 通路
-3. **可视化结果** - 彩色节点 + 统计信息
+## 4. 导出命名建议
+- 数据：`<上传文件名>_stat_<时间戳>.csv`
+- PPTX：`report_<上传文件名>_<时间戳>.pptx`
+- 图片：`png_<上传文件名>_<时间戳>` / `svg_<上传文件名>_<时间戳>`
 
-### 应用位置
+## 5. 按钮变灰的常见原因
+- Summary 模式未选实体列或 Value 列。  
+- 原始矩阵 Manual 模式未各选 1 个 Ctrl 和 1 个 Exp。  
+- 未选通路就想进入可视化。
 
-```bash
-/Users/haifeng/BioViz-Local/src-tauri/target/release/bundle/macos/BioViz Local.app
-```
 
-## 🚀 使用流程
-
-### 步骤 1: 准备数据文件
-
-创建一个 CSV 或 TSV 文件，包含基因名称和 Log2 Fold Change：
-
-**示例文件 - gene_expression.csv:**
-```csv
-Gene,LogFC
-TP53,2.5
-BAX,1.8
-BCL2,-1.5
-CASP3,2.1
-CYCS,1.9
-XIAP,-2.0
-FAS,2.0
-APAF1,1.7
-PUMA,2.3
-CDKN1A,2.8
-MDM2,1.2
-GADD45A,1.9
-CCND1,1.5
-CDK4,1.3
-RB1,-0.8
-E2F,1.7
-CCNE1,1.9
-CDK2,1.6
-```
-
-保存到桌面或任意位置。
-
-### 步骤 2: 运行应用
-
-1. 双击打开 `BioViz Local.app`
-2. 首次运行：右键 → "打开" （绕过 Gatekeeper）
-3. 应用启动后会显示：
-   - **Engine Connected** （绿色） = Python 引擎已连接
-   - **Engine Disconnected** （红色） = 需要重启应用
-
-### 步骤 3: 上传数据
-
-1. 在 "Upload Data" 页面
-2. 点击 **📤 Choose File**
-3. 选择你的 `.csv` 或 `.tsv` 文件
-4. 应用会自动解析：
-   - 查找 `Gene` 列
-   - 查找 `LogFC` 或 `log2FC` 列
-5. 成功后会显示：
-   - ✓ Data Loaded: XX genes
-   - 前 10 个基因的预览
-
-### 步骤 4: 选择 KEGG 通路
-
-系统会自动进入 "Select Pathway" 页面，选择一个通路：
-
-- **💀 Apoptosis** - 细胞凋亡通路 (hsa04210)
-- **🛡️ p53 signaling pathway** - 肿瘤抑制通路 (hsa04115)
-- **🔄 Cell cycle** - 细胞周期通路 (hsa04110)
-
-点击任意通路卡片，应用会：
-1. 向 Python 引擎发送着色请求
-2. 应用表达数据到通路节点
-3. 计算统计信息
-
-### 步骤 5: 查看结果
-
-在 "Visualize" 页面，你会看到：
-
-#### 统计卡片
-- **Total Nodes** - 通路总节点数
-- **Upregulated** - 上调基因数量和百分比（红色）
-- **Downregulated** - 下调基因数量和百分比（蓝色）
-- **Unchanged** - 未检测基因数量
-
-#### 通路详情
-- 通路 ID
-- 节点数
-- 连线数
-
-#### 彩色节点列表
-- 显示前 20 个节点
-- 每个节点显示：
-  - 颜色方块（红色 = 上调，蓝色 = 下调，灰色 = 无数据）
-  - 基因名称
-  - LogFC 值
-
-### 步骤 6: 导出（即将推出）
-
-点击 **📊 Export to PPTX** 按钮（当前版本为占位功能）
-
-## 🎨 颜色编码说明
-
-| LogFC | 颜色 | 含义 |
-|-------|------|------|
-| > 0 | 红色 (#ff0000) | 上调 (Upregulated) |
-| < 0 | 蓝色 (#0000ff) | 下调 (Downregulated) |
-| 无数据 | 灰色 (#95a5a6) | 未检测 (Unchanged) |
-
-颜色强度与表达值大小成正比。
-
-## 📝 Activity Log
-
-应用底部的 "Activity Log" 显示所有操作记录：
-- 文件加载
-- 通路选择
-- Python 引擎响应
-- 错误信息
-
-## ⚠️ 故障排除
-
-### Engine Disconnected 
-**原因：** Python 进程未启动
-
-**解决方法：**
-1. 完全退出应用
-2. 重新打开
-3. 等待 2-3 秒让 Python 引擎启动
-
-### 文件加载失败
-**原因：** CSV 格式不正确
-
-**检查：**
-- 文件必须有 `Gene` 列（或 `Symbol`）
-- 文件必须有 `LogFC` 列（或 `log2FC`，`fold`）
-- 使用逗号 (`,`) 或制表符 (`\t`) 分隔
-
-### No response from Python
-**原因：** 基因名称不匹配
-
-**说明：**
-- 如果你的数据中没有通路中的基因，所有节点都会显示灰色
-- 尝试使用标准基因符号（如 `TP53` 而不是 `p53`）
-
-## 🔧 技术细节
-
-### 支持的文件格式
-- CSV (`.csv`)
-- TSV (`.tsv`)
-- 纯文本 (`.txt`)
-
-### 必需列
-- Gene / Symbol / Gene_Name
-- LogFC / log2FC / FoldChange
-
-### 示例数据集
-
-你可以使用提供的测试数据：
-
-```bash
-cd /Users/haifeng/BioViz-Local
-cat > test_data.csv << 'EOF'
-Gene,LogFC
-TP53,2.5
-BAX,1.8
-BCL2,-1.5
-CASP3,2.1
-FAS,2.0
-XIAP,-2.0
-CYCS,1.9
-APAF1,1.7
-PUMA,2.3
-CDKN1A,2.8
-EOF
-```
-
-然后在应用中加载 `test_data.csv`。
-
-## 📊 下一步
-
-当前版本还没有：
-1. ❌ ECharts 可视化（图表显示）
-2. ❌ PPTX 导出功能
-3. ❌ 数据编辑功能
-
-这些将在未来版本中添加。
-
----
-
-**🎉 现在就试试吧！**
-
-1. 打开 `BioViz Local.app`
-2. 加载示例数据
-3. 选择 Apoptosis 通路
-4. 查看彩色结果
-
-**Happy analyzing!** 🧬
+## 6. 通路可视化
+- 点击对应的通路，或 search online 搜索并下载对应的通路。
+- 右下角Run analysis & visualize，展示通路。
