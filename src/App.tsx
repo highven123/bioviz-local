@@ -564,44 +564,7 @@ function App() {
                   {/* Divider */}
                   <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
 
-                  <button
-                    onClick={async () => {
-                      const rawId = analysisData?.pathway?.id;
-                      if (!rawId) {
-                        alert('当前通路没有有效的 KEGG ID。');
-                        return;
-                      }
 
-                      // 规范化为 KEGG 通路 ID，例如 hsa04640
-                      const cleaned = rawId
-                        .replace(/^path:/i, '')
-                        .replace(/^ko:/i, '')
-                        .replace(/^hsa:/i, 'hsa')
-                        .trim();
-
-                      if (!/^hsa\d+$/i.test(cleaned)) {
-                        alert(`无法从当前 ID 推断 KEGG 通路：${rawId}`);
-                        return;
-                      }
-
-                      const url = `https://www.kegg.jp/pathway/${cleaned}`;
-                      try {
-                        await openPath(url);
-                      } catch (e) {
-                        alert('打开 KEGG 页面失败：' + e);
-                      }
-                    }}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px'
-                    }}
-                    title="在浏览器中打开 KEGG 通路页面（可在官网下载 PNG / PDF / KGML）"
-                  >
-                    KEGG
-                  </button>
 
                   <button
                     onClick={async () => {
