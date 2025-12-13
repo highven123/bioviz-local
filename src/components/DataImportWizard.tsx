@@ -159,9 +159,9 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     const handleUploadSuccess = (data: any) => {
         const incoming = Array.isArray(data?.files) ? data.files : [data];
         const files: UploadedFileInfo[] = incoming
-            .filter((f: any) => f && typeof f.filePath === 'string')
+            .filter((f: any) => f && (typeof f.filePath === 'string' || typeof f.path === 'string'))
             .map((f: any) => ({
-                path: f.filePath,
+                path: f.filePath || f.path,
                 columns: Array.isArray(f.columns) ? f.columns : [],
                 preview: Array.isArray(f.preview) ? f.preview : [],
                 suggestedMapping: f.suggestedMapping || {},
