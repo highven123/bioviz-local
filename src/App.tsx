@@ -10,7 +10,9 @@ import { WorkflowBreadcrumb, WorkflowStep } from './components/WorkflowBreadcrum
 import { SplashScreen } from './components/SplashScreen'; // New Import
 import { SafetyGuardModal } from './components/SafetyGuardModal';
 import { AIChatPanel } from './components/AIChatPanel';
+import { InsightBadges } from './components/InsightBadges';
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
+import { AnalysisInsights } from './types/insights';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { save, ask } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
@@ -36,6 +38,7 @@ interface AnalysisResult {
   entityKind: EntityKind;
   analysis_table_path?: string;
   sourceFilePath: string;
+  insights?: AnalysisInsights;  // AI-generated insights
 }
 
 // Helper to derive base filename (without extension) from a full path
@@ -241,6 +244,7 @@ function App() {
           entityKind,
           analysis_table_path: response.analysis_table_path || undefined,
           sourceFilePath: filePath,
+          insights: response.insights,  // AI-generated insights from backend
         };
 
         setAnalysisResults((prev) => [...prev, result]);
@@ -710,21 +714,31 @@ function App() {
               </div>
             )}
 
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {activeAnalysis ? (
-                <PathwayVisualizer
-                  ref={vizRef}
-                  nodes={activeAnalysis.pathway.nodes}
-                  edges={activeAnalysis.pathway.edges}
-                  title={activeAnalysis.pathway.name}
-                  theme="dark"
-                  pathwayId={activeAnalysis.pathway.id}
-                  dataType={entityKind}
-                  sourceFileBase={uploadedFileBase}
-                  onNodeClick={handlePathwayNodeClick}
-                  selectedNodeNames={filteredGenes}
-                  isPro={isPro}
-                />
+                <>
+                  {/* AI Insights */}
+                  {activeAnalysis.insights && (
+                    <InsightBadges insights={activeAnalysis.insights} />
+                  )}
+
+                  {/* Pathway Visualization */}
+                  <div style={{ flex: 1, minHeight: 0 }}>
+                    <PathwayVisualizer
+                      ref={vizRef}
+                      nodes={activeAnalysis.pathway.nodes}
+                      edges={activeAnalysis.pathway.edges}
+                      title={activeAnalysis.pathway.name}
+                      theme="dark"
+                      pathwayId={activeAnalysis.pathway.id}
+                      dataType={entityKind}
+                      sourceFileBase={uploadedFileBase}
+                      onNodeClick={handlePathwayNodeClick}
+                      selectedNodeNames={filteredGenes}
+                      isPro={isPro}
+                    />
+                  </div>
+                </>
               ) : (
                 <div className="empty-state">
                   <p style={{ fontSize: '40px', marginBottom: '10px', opacity: 0.5 }}>🧬</p>
