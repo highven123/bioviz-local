@@ -920,7 +920,21 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
         colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
         statistics = get_pathway_statistics(colored_pathway)
         
-        # Return both pathway and volcano data
+        # Generate AI insights from analysis results
+        try:
+            from tools.insight_generator import generate_insights
+            analysis_result = {
+                "statistics": statistics,
+                "volcano_data": volcano_data,
+                "gene_count": len(gene_expression),
+                "has_pvalue": len(gene_pvalues) > 0
+            }
+            insights = generate_insights(analysis_result)
+        except Exception as e:
+            print(f"[BioEngine] Failed to generate insights: {e}", file=sys.stderr)
+            insights = {"summary": "", "badges": []}
+        
+        # Return both pathway and volcano data with AI insights
         return {
             "status": "ok",
             "pathway": colored_pathway,
@@ -929,6 +943,7 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
             "volcano_data": volcano_data,
             "has_pvalue": len(gene_pvalues) > 0,
             "analysis_table_path": analysis_table_path,
+            "insights": insights,  # AI-generated insights
         }
     except Exception as e:
         import traceback
