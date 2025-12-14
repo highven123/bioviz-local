@@ -1,10 +1,8 @@
 /**
- * BioViz Local - Python Build Script
+ * BioViz Local - Python Build Script (Extreme Slim Edition)
  * 
- * This script:
- * 1. Detects the current target triple from `rustc -vV`
- * 2. Runs PyInstaller to package the Python engine
- * 3. Moves and renames the binary to match Tauri's sidecar naming convention
+ * Goal: Build a Python binary UNDER 100MB
+ * Strategy: Aggressive module exclusion via PyInstaller
  * 
  * Usage: node scripts/build-python.js
  */
@@ -25,7 +23,6 @@ const PYTHON_ENTRY = path.join(PYTHON_DIR, 'bio_engine.py');
 
 /**
  * Get the target triple from rustc
- * e.g., "x86_64-apple-darwin", "x86_64-pc-windows-msvc"
  */
 function getTargetTriple() {
     try {
@@ -47,86 +44,113 @@ function getTargetTriple() {
 }
 
 /**
- * Determine the correct file extension based on the target triple
+ * Get file extension based on platform
  */
 function getExtension(targetTriple) {
-    if (targetTriple.includes('windows')) {
-        return '.exe';
-    }
-    return '';
+    return targetTriple.includes('windows') ? '.exe' : '';
 }
 
-
 /**
- * Compile bio_core.py using Cython
+ * Generate PyInstaller exclusion list
+ * This is the CRITICAL part for size reduction
  */
-function buildCython() {
-    console.log('[build-python] Compiling core logic with Cython...');
+function getExclusionList() {
+    return [
+        // === GUI Frameworks (Save ~30MB) ===
+        'tkinter', '_tkinter', 'Tkinter',
+        'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
+        'wx', 'wxPython',
+        'curses',
 
-    // Install Cython if needed (best effort)
-    try {
-        // Just checking version to see if installed
-        execSync('cython --version', { stdio: 'ignore' });
-    } catch (e) {
-        console.log('[build-python] Cython not found, skipping compilation (using source fallback)');
-        return false;
-    }
+        // === Testing & Dev Tools (Save ~10MB) ===
+        'unittest', 'test', 'tests',
+        'pytest', 'nose', 'doctest',
+        'pdb', 'profile', 'pstats',
+        'distutils', 'setuptools', 'pip',
 
-    try {
-        // Detect python command
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        // === Data Science (Save ~50MB+) ===
+        'pandas', 'numpy', 'scipy',
+        'matplotlib', 'seaborn', 'plotly',
+        'PIL', 'Pillow',
+        'sklearn', 'scikit-learn',
 
-        // Run setup.py build_ext --inplace
-        // This compiles bio_core.py -> bio_core.c -> bio_core.so (or .pyd)
-        execSync(`${pythonCmd} setup.py build_ext --inplace`, {
-            cwd: PYTHON_DIR,
-            stdio: 'inherit'
-        });
-        console.log('[build-python] Cython compilation complete');
-        return true;
-    } catch (error) {
-        console.error('[build-python] Cython compilation failed:', error.message);
-        console.error('[build-python] Falling back to Python source interpretation');
-        return false;
-    }
+        // === Web Frameworks (Save ~15MB) ===
+        'flask', 'django', 'tornado',
+        'aiohttp', 'fastapi', 'starlette',
+        'werkzeug', 'jinja2',
+
+        // === LangChain Bloat (Save ~20MB) ===
+        'langchain', 'langsmith', 'langserve',
+        'chromadb', 'faiss', 'pinecone',
+        'huggingface_hub', 'transformers',
+
+        // === Async/Concurrency (Keep minimal) ===
+        'multiprocessing', 'concurrent.futures',
+
+        // === Encodings (Keep only essentials) ===
+        'encodings.bz2_codec',
+        'encodings.zlib_codec',
+        'encodings.hex_codec',
+        'encodings.quopri_codec',
+        'encodings.uu_codec',
+
+        // === Misc Bloat ===
+        'IPython', 'jupyter',
+        'notebook', 'nbformat',
+        'xml.dom', 'xml.sax',
+        'html.parser',
+        'email', 'calendar',
+    ];
 }
 
 /**
- * Run PyInstaller to build the Python engine
+ * Format size in MB
+ */
+function formatSize(bytes) {
+    return (bytes / (1024 * 1024)).toFixed(2);
+}
+
+/**
+ * Run PyInstaller with aggressive exclusions
  */
 function buildPython() {
-    // 1. Try to compile with Cython first
-    buildCython();
-
     console.log('[build-python] Building Python engine with PyInstaller...');
+    console.log('[build-python] 🔥 EXTREME SLIM MODE: Excluding unused modules');
 
-    // Check if bio_engine.py exists
     if (!fs.existsSync(PYTHON_ENTRY)) {
         console.error(`[build-python] Python entry point not found: ${PYTHON_ENTRY}`);
         process.exit(1);
     }
 
-    // Run PyInstaller
-    // Important: --hidden-import is often needed for dynamic imports, but here bio_core is imported directly
-    // PyInstaller should automatically pick up the .so/.pyd file if it exists next to the script
     try {
-        // Determine separator for --add-data (Windows uses ';', others use ':')
         const sep = process.platform === 'win32' ? ';' : ':';
-
-        // Define data to bundle: source_path{{sep}}dest_path
-        // PyInstaller expects source path relative to CWD (PYTHON_DIR) or absolute
-        // We want to bundle "../assets/templates" to "assets/templates"
         const sourcePath = path.join(ROOT_DIR, 'assets', 'templates');
         const destPath = path.join('assets', 'templates');
         const addDataArg = `--add-data "${sourcePath}${sep}${destPath}"`;
 
-        execSync(
-            `pyinstaller --onefile ${addDataArg} --name bio-engine --distpath "${PYTHON_DIR}/dist" "${PYTHON_ENTRY}"`,
-            {
-                cwd: PYTHON_DIR,
-                stdio: 'inherit',
-            }
-        );
+        // Build exclusion arguments
+        const exclusions = getExclusionList();
+        const excludeArgs = exclusions.map(mod => `--exclude-module ${mod}`).join(' ');
+
+        console.log(`[build-python] Excluding ${exclusions.length} modules...`);
+
+        const pyinstallerCmd = [
+            'pyinstaller',
+            '--onefile',
+            '--clean',
+            '--strip',  // Strip debug symbols (Unix only, ignored on Windows)
+            addDataArg,
+            excludeArgs,
+            '--name bio-engine',
+            `--distpath "${PYTHON_DIR}/dist"`,
+            `"${PYTHON_ENTRY}"`
+        ].join(' ');
+
+        execSync(pyinstallerCmd, {
+            cwd: PYTHON_DIR,
+            stdio: 'inherit',
+        });
+
         console.log('[build-python] PyInstaller build complete');
     } catch (error) {
         console.error('[build-python] PyInstaller failed:', error.message);
@@ -135,7 +159,7 @@ function buildPython() {
 }
 
 /**
- * Move and rename the binary to Tauri's expected location
+ * Move, rename, and report binary size
  */
 function moveAndRenameBinary(targetTriple) {
     const extension = getExtension(targetTriple);
@@ -158,19 +182,38 @@ function moveAndRenameBinary(targetTriple) {
         process.exit(1);
     }
 
-    // Copy the file (use copy instead of move for cross-device compatibility)
+    // Get file size BEFORE moving
+    const stats = fs.statSync(sourcePath);
+    const sizeMB = formatSize(stats.size);
+
+    // Copy the file
     fs.copyFileSync(sourcePath, targetPath);
 
-    // Make it executable on Unix-like systems
+    // Make executable on Unix
     if (!targetTriple.includes('windows')) {
         fs.chmodSync(targetPath, 0o755);
     }
 
     console.log(`[build-python] Binary ready at: ${targetPath}`);
+    console.log('');
+    console.log('='.repeat(60));
+    console.log(`📦 FINAL BINARY SIZE: ${sizeMB} MB`);
+    console.log('='.repeat(60));
+
+    // Report success/failure
+    if (parseFloat(sizeMB) < 60) {
+        console.log('✅ PERFECT! Binary is under 60MB (神级优化)');
+    } else if (parseFloat(sizeMB) < 100) {
+        console.log('✅ EXCELLENT! Binary is under 100MB (完全可接受)');
+    } else {
+        console.log('❌ FAILED! Binary is over 100MB');
+        console.log('   Check if pandas/numpy were accidentally installed');
+        process.exit(1);
+    }
 }
 
 /**
- * Clean up PyInstaller artifacts
+ * Clean up build artifacts
  */
 function cleanup() {
     console.log('[build-python] Cleaning up build artifacts...');
@@ -197,19 +240,12 @@ function cleanup() {
 // Main execution
 function main() {
     console.log('='.repeat(60));
-    console.log('[build-python] BioViz Python Sidecar Build Script');
+    console.log('[build-python] BioViz Python Sidecar Build (EXTREME SLIM)');
     console.log('='.repeat(60));
 
-    // Step 1: Get target triple
     const targetTriple = getTargetTriple();
-
-    // Step 2: Build with PyInstaller
     buildPython();
-
-    // Step 3: Move and rename
     moveAndRenameBinary(targetTriple);
-
-    // Step 4: Cleanup (optional, comment out to keep artifacts)
     cleanup();
 
     console.log('='.repeat(60));

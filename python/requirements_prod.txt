@@ -1,0 +1,21 @@
+# BioViz Local - Production Dependencies (Minimal)
+# Goal: Keep Python binary under 100MB
+
+# Core AI functionality
+openai>=1.0.0
+pydantic>=2.0.0
+
+# Build tool
+pyinstaller>=6.0.0
+
+# File processing (Excel support)
+openpyxl>=3.0.0
+
+# Presentation generation
+python-pptx>=0.6.21
+
+# HTTP requests (for KEGG API)
+requests>=2.25.0
+
+# NOTE: NO pandas, numpy, matplotlib, langchain, jupyter, tkinter
+# We use native Python data structures to save ~50MB+
