@@ -53,6 +53,16 @@ except ImportError:
     IMAGE_AVAILABLE = False
     print("[BioEngine] Image module not available", file=sys.stderr)
 
+try:
+    from multi_sample import (
+        handle_load_multi_sample,
+        handle_get_sample_groups
+    )
+    MULTI_SAMPLE_AVAILABLE = True
+except ImportError:
+    MULTI_SAMPLE_AVAILABLE = False
+    print("[BioEngine] Multi-sample module not available", file=sys.stderr)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -1317,6 +1327,11 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             return_handlers["UPLOAD_IMAGE"] = handle_upload_image
             return_handlers["ANALYZE_IMAGE"] = handle_analyze_image
             return_handlers["LIST_IMAGES"] = handle_list_images
+        
+        # V2.0: Add Multi-sample handlers if available
+        if MULTI_SAMPLE_AVAILABLE:
+            return_handlers["LOAD_MULTI_SAMPLE"] = handle_load_multi_sample
+            return_handlers["GET_SAMPLE_GROUPS"] = handle_get_sample_groups
 
         # Handlers that send response directly (new style)
         direct_send_handlers = {

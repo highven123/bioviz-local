@@ -105,22 +105,131 @@ def analyze_western_blot(image_path: str, ai_client: Any = None) -> Dict[str, An
         "analysis": None
     }
     
-    # If AI client available, do multi-modal analysis
-    if ai_client:
-        try:
-            base64_image = encode_image_base64(image_path)
-            if base64_image:
-                # This would be the multi-modal API call
-                # For now, return placeholder
-                result["analysis"] = {
-                    "description": "AI analysis pending - multi-modal model integration required",
-                    "bands_detected": None,
-                    "relative_intensity": None
-                }
-        except Exception as e:
-            print(f"[Image] AI analysis error: {e}", file=sys.stderr)
+    # Try multimodal AI analysis
+    base64_image = encode_image_base64(image_path)
+    if base64_image:
+        ai_result = analyze_image_with_multimodal_ai(
+            base64_image, 
+            "western_blot",
+            "Analyze this Western Blot image. Identify the protein bands, their relative intensities, and any notable observations. If lane labels are visible, include them."
+        )
+        if ai_result:
+            result["analysis"] = ai_result
     
     return result
+
+
+def analyze_image_with_multimodal_ai(
+    base64_image: str,
+    image_type: str,
+    prompt: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Analyze an image using multimodal AI (GPT-4V, Qwen-VL, etc.).
+    
+    Args:
+        base64_image: Base64-encoded image
+        image_type: Type of image for context
+        prompt: Analysis prompt
+    
+    Returns:
+        Analysis result dict or None
+    """
+    import os
+    
+    # Check for available AI providers
+    provider = os.environ.get("AI_PROVIDER", "").lower()
+    
+    try:
+        if provider == "openai" or os.environ.get("OPENAI_API_KEY"):
+            return _analyze_with_openai(base64_image, prompt)
+        elif provider == "qwen" or os.environ.get("DASHSCOPE_API_KEY"):
+            return _analyze_with_qwen(base64_image, prompt)
+        else:
+            print(f"[Image] No multimodal AI configured. Set OPENAI_API_KEY or DASHSCOPE_API_KEY.", file=sys.stderr)
+            return {
+                "description": "Multimodal AI not configured. Please set OPENAI_API_KEY or DASHSCOPE_API_KEY.",
+                "ai_analyzed": False
+            }
+    except Exception as e:
+        print(f"[Image] Multimodal AI error: {e}", file=sys.stderr)
+        return {"description": f"AI analysis error: {str(e)}", "ai_analyzed": False}
+
+
+def _analyze_with_openai(base64_image: str, prompt: str) -> Dict[str, Any]:
+    """Analyze image using OpenAI GPT-4V."""
+    import os
+    from openai import OpenAI
+    
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}",
+                            "detail": "high"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=500
+    )
+    
+    analysis_text = response.choices[0].message.content
+    print(f"[Image] GPT-4V analysis complete", file=sys.stderr)
+    
+    return {
+        "description": analysis_text,
+        "model": "gpt-4o",
+        "ai_analyzed": True
+    }
+
+
+def _analyze_with_qwen(base64_image: str, prompt: str) -> Dict[str, Any]:
+    """Analyze image using Qwen-VL (DashScope API)."""
+    import os
+    from openai import OpenAI
+    
+    client = OpenAI(
+        api_key=os.environ.get("DASHSCOPE_API_KEY"),
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    
+    response = client.chat.completions.create(
+        model="qwen-vl-max",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=500
+    )
+    
+    analysis_text = response.choices[0].message.content
+    print(f"[Image] Qwen-VL analysis complete", file=sys.stderr)
+    
+    return {
+        "description": analysis_text,
+        "model": "qwen-vl-max",
+        "ai_analyzed": True
+    }
 
 
 def analyze_flow_cytometry(image_path: str, ai_client: Any = None) -> Dict[str, Any]:
@@ -138,16 +247,25 @@ def analyze_flow_cytometry(image_path: str, ai_client: Any = None) -> Dict[str, 
     if metadata.get("status") != "ok":
         return metadata
     
-    return {
+    result = {
         "status": "ok",
         "image_type": "flow_cytometry",
         "metadata": metadata,
-        "analysis": {
-            "description": "Flow cytometry analysis pending",
-            "populations": None,
-            "percentages": None
-        }
+        "analysis": None
     }
+    
+    # Try multimodal AI analysis
+    base64_image = encode_image_base64(image_path)
+    if base64_image:
+        ai_result = analyze_image_with_multimodal_ai(
+            base64_image, 
+            "flow_cytometry",
+            "Analyze this flow cytometry scatter plot. Identify distinct cell populations, estimate their percentages, and describe the gating strategy if visible."
+        )
+        if ai_result:
+            result["analysis"] = ai_result
+    
+    return result
 
 
 def analyze_histology(image_path: str, ai_client: Any = None) -> Dict[str, Any]:
@@ -165,16 +283,25 @@ def analyze_histology(image_path: str, ai_client: Any = None) -> Dict[str, Any]:
     if metadata.get("status") != "ok":
         return metadata
     
-    return {
+    result = {
         "status": "ok",
         "image_type": "histology",
         "metadata": metadata,
-        "analysis": {
-            "description": "Histology analysis pending",
-            "staining_pattern": None,
-            "positive_area": None
-        }
+        "analysis": None
     }
+    
+    # Try multimodal AI analysis
+    base64_image = encode_image_base64(image_path)
+    if base64_image:
+        ai_result = analyze_image_with_multimodal_ai(
+            base64_image, 
+            "histology",
+            "Analyze this histology/IHC image. Describe the tissue structure, staining pattern, identify positive and negative regions, and estimate the percentage of positive staining if applicable."
+        )
+        if ai_result:
+            result["analysis"] = ai_result
+    
+    return result
 
 
 # Image storage management
