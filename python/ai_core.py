@@ -1,6 +1,6 @@
 """
 BioViz Local - AI Core Engine
-Implements the Logic Lock system using OpenAI SDK.
+Handles AI interactions with Logic Lock safety protocol using DeepSeek API.
 """
 
 import os
@@ -19,27 +19,16 @@ from ai_tools import (
 )
 
 
-# --- Configuration ---
+# ============================================
+# DeepSeek API Configuration
+# ============================================
+# DeepSeek uses OpenAI-compatible API
+client = OpenAI(
+    api_key="sk-a360a14e902a42288d9517620b8d6a35",
+    base_url="https://api.deepseek.com"
+)
 
-def get_openai_client() -> OpenAI:
-    """
-    Initialize OpenAI client.
-    Supports:
-    - OpenAI API: Set OPENAI_API_KEY
-    - Local Ollama: Set OPENAI_BASE_URL=http://localhost:11434/v1
-    """
-    api_key = os.environ.get("OPENAI_API_KEY", "ollama")  # Default for Ollama
-    base_url = os.environ.get("OPENAI_BASE_URL")  # e.g., http://localhost:11434/v1
-    
-    if base_url:
-        return OpenAI(api_key=api_key, base_url=base_url)
-    else:
-        return OpenAI(api_key=api_key)
-
-
-def get_model_name() -> str:
-    """Get the model name to use."""
-    return os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+DEFAULT_MODEL = "deepseek-chat"
 
 
 # --- System Prompt ---
@@ -94,14 +83,13 @@ def process_query(
     # Add current query
     messages.append({"role": "user", "content": user_query})
     
-    # Get client and tools
-    client = get_openai_client()
+    # Get tools
     tools = get_openai_tools_schema()
     
     try:
-        # Call OpenAI
+        # Call DeepSeek API
         response = client.chat.completions.create(
-            model=get_model_name(),
+            model=DEFAULT_MODEL,
             messages=messages,
             tools=tools,
             tool_choice="auto"
