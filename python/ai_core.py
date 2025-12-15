@@ -60,9 +60,10 @@ def get_ai_client() -> OpenAI:
     
     if provider == "bailian":
         # Alibaba Cloud Bailian DeepSeek API
-        api_key = os.getenv("DEEPSEEK_API_KEY")
+        # Support both DASHSCOPE_API_KEY (official) and DEEPSEEK_API_KEY (our convention)
+        api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
-            print("[AI Core] Warning: DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
+            print("[AI Core] Warning: DASHSCOPE_API_KEY or DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
             api_key = "sk-placeholder"
         
         return OpenAI(
