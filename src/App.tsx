@@ -53,7 +53,7 @@ function getBaseName(filePath: string | undefined | null): string {
 function App() {
   const [showSplash, setShowSplash] = useState(true); // Splash State
 
-  const { isConnected, isLoading: engineLoading, sendCommand, activeProposal, resolveProposal } = useBioEngine();
+  const { isConnected, isLoading: engineLoading, sendCommand, activeProposal, resolveProposal, lastResponse } = useBioEngine();
 
   // --- State ---
   const [draftConfig, setDraftConfig] = useState<AnalysisConfig | null>(null);
