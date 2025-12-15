@@ -1158,22 +1158,41 @@ def handle_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not query:
             return {"status": "error", "message": "Query is required"}
         
+        print(f"[BioCore] Processing chat query: {query[:50]}...", file=sys.stderr)
         action = process_query(query, history, context)
+        
+        print(f"[BioCore] AI action type: {action.type}, content: {action.content[:50] if action.content else 'None'}...", file=sys.stderr)
+        
+        # Convert Pydantic model to dict
+        action_dict = action.model_dump()
+        print(f"[BioCore] Serialized action: {str(action_dict)[:100]}...", file=sys.stderr)
         
         return {
             "status": "ok",
-            **action.model_dump()
+            "cmd": "CHAT",  # Add cmd field for frontend
+            **action_dict
         }
         
     except ImportError as e:
+        error_msg = f"AI module not available: {str(e)}. Please install openai and pydantic."
+        print(f"[BioCore] Import error: {error_msg}", file=sys.stderr)
         return {
-            "status": "error",
-            "message": f"AI module not available: {str(e)}. Please install openai and pydantic."
+            "status": "ok",
+            "cmd": "CHAT",
+            "type": "CHAT",
+            "content": error_msg
         }
     except Exception as e:
+        error_msg = f"AI error: {str(e)}"
+        print(f"[BioCore] Error: {error_msg}", file=sys.stderr)
+        import traceback
+        import sys # Ensure sys is imported for stderr
+        traceback.print_exc(file=sys.stderr) # Print traceback to stderr
         return {
-            "status": "error",
-            "message": f"AI error: {str(e)}"
+            "status": "ok",
+            "cmd": "CHAT",
+            "type": "CHAT",
+            "content": f"Sorry, I encountered an error: {str(e)}"
         }
 
 
