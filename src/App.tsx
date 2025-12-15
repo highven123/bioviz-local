@@ -804,6 +804,11 @@ function App() {
                 sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
                 isConnected={isConnected}
                 lastResponse={lastResponse}
+                analysisContext={activeAnalysis ? {
+                  pathway: activeAnalysis.pathway,
+                  volcanoData: activeAnalysis.volcano_data,
+                  statistics: activeAnalysis.statistics
+                } : undefined}
               />
             )}
           </div>

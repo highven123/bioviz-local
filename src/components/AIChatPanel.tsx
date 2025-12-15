@@ -15,9 +15,14 @@ interface AIChatPanelProps {
     sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
     isConnected: boolean;
     lastResponse: any; // Response from useBioEngine
+    analysisContext?: {
+        pathway?: any;
+        volcanoData?: any[];
+        statistics?: any;
+    };
 }
 
-export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnected, lastResponse }) => {
+export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnected, lastResponse, analysisContext }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -80,13 +85,14 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnect
         setIsLoading(true);
 
         try {
-            // Send CHAT command to backend
+            // Send CHAT command to backend with analysis context
             await sendCommand('CHAT', {
                 query: userMessage.content,
                 history: messages.slice(-10).map(m => ({
                     role: m.role,
                     content: m.content
-                }))
+                })),
+                context: analysisContext || {}
             });
 
             // Add placeholder while waiting for response
