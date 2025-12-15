@@ -14,6 +14,7 @@ import { InsightBadges } from './components/InsightBadges';
 import { GSEAPanel } from './components/GSEAPanel';
 import { ImageUploader } from './components/ImageUploader';
 import { AIEventPanel } from './components/AIEventPanel';
+import { MultiSamplePanel } from './components/MultiSamplePanel';
 import { eventBus, BioVizEvents } from './stores/eventBus';
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
 import { AnalysisInsights } from './types/insights';
@@ -69,7 +70,7 @@ function App() {
   const [filteredGenes, setFilteredGenes] = useState<string[]>([]);
   const [activeGene, setActiveGene] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [leftPanelView, setLeftPanelView] = useState<'chart' | 'table' | 'evidence' | 'ai-chat' | 'gsea' | 'images'>('chart');
+  const [leftPanelView, setLeftPanelView] = useState<'chart' | 'table' | 'evidence' | 'ai-chat' | 'gsea' | 'images' | 'multi-sample'>('chart');
   const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
 
   const activeAnalysis = analysisResults[activeResultIndex] || null;
@@ -833,6 +834,22 @@ function App() {
             >
               🖼️ Images
             </button>
+            <button
+              onClick={() => setLeftPanelView('multi-sample')}
+              style={{
+                flex: 1,
+                padding: '8px',
+                background: leftPanelView === 'multi-sample' ? 'var(--brand-primary)' : 'transparent',
+                color: leftPanelView === 'multi-sample' ? 'white' : 'var(--text-dim)',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 500
+              }}
+            >
+              🔄 Multi
+            </button>
           </div>
           <div className="panel-body">
             {leftPanelView === 'evidence' && (
@@ -866,6 +883,13 @@ function App() {
               <ImageUploader
                 sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
                 isConnected={isConnected}
+              />
+            )}
+            {leftPanelView === 'multi-sample' && (
+              <MultiSamplePanel
+                sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
+                isConnected={isConnected}
+                currentFilePath={activeAnalysis?.sourceFilePath}
               />
             )}
           </div>
