@@ -19,3 +19,4 @@ requests>=2.25.0
 
 # NOTE: NO pandas, numpy, matplotlib, langchain, jupyter, tkinter
 # We use native Python data structures to save ~50MB+
+python-dotenv>=1.0.0

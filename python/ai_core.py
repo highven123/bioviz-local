@@ -9,6 +9,16 @@ import json
 import sys
 from typing import Any, Dict, List, Optional
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load from project root .env file
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+    load_dotenv(env_path)
+    print(f"[AI Core] Loaded environment from: {env_path}", file=sys.stderr)
+except ImportError:
+    print("[AI Core] Warning: python-dotenv not installed. Environment variables must be set manually.", file=sys.stderr)
+
 from openai import OpenAI
 from ai_protocol import AIAction, SafetyLevel, store_proposal
 from ai_tools import (
