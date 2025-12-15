@@ -803,6 +803,7 @@ function App() {
               <AIChatPanel
                 sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
                 isConnected={isConnected}
+                lastResponse={lastResponse}
               />
             )}
           </div>

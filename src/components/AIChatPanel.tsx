@@ -14,9 +14,10 @@ interface Message {
 interface AIChatPanelProps {
     sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
     isConnected: boolean;
+    lastResponse: any; // Response from useBioEngine
 }
 
-export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnected }) => {
+export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnected, lastResponse }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -30,41 +31,30 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnect
         scrollToBottom();
     }, [messages]);
 
-    // Listen for AI responses from backend
+    // Listen for AI responses from useBioEngine's lastResponse
     useEffect(() => {
-        const handleSidecarOutput = (event: any) => {
-            try {
-                const response = JSON.parse(event.payload);
+        if (!lastResponse) return;
 
-                // Only handle CHAT responses
-                if (response.cmd === 'CHAT' && response.type === 'CHAT') {
-                    setMessages(prev => {
-                        // Remove the last "Processing..." message if it exists
-                        const filtered = prev.filter(m => m.content !== 'Processing your request...');
+        try {
+            // Only handle CHAT responses
+            if (lastResponse.cmd === 'CHAT' && lastResponse.type === 'CHAT') {
+                setMessages(prev => {
+                    // Remove the last "Processing..." message if it exists
+                    const filtered = prev.filter(m => m.content !== 'Processing your request...');
 
-                        // Add AI response
-                        return [...filtered, {
-                            role: 'assistant',
-                            content: response.content,
-                            timestamp: Date.now()
-                        }];
-                    });
-                    setIsLoading(false);
-                }
-            } catch (error) {
-                console.error('Failed to parse AI response:', error);
+                    // Add AI response
+                    return [...filtered, {
+                        role: 'assistant',
+                        content: lastResponse.content,
+                        timestamp: Date.now()
+                    }];
+                });
+                setIsLoading(false);
             }
-        };
-
-        // Subscribe to sidecar output events
-        import('@tauri-apps/api/event').then(({ listen }) => {
-            listen('sidecar-output', handleSidecarOutput);
-        });
-
-        return () => {
-            // Cleanup handled by Tauri
-        };
-    }, []);
+        } catch (error) {
+            console.error('Failed to process AI response:', error);
+        }
+    }, [lastResponse]);
 
     const handleSend = async () => {
         if (!input.trim() || !isConnected || isLoading) return;
