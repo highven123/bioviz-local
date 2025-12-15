@@ -109,7 +109,7 @@ def get_model_name() -> str:
     provider = os.getenv("AI_PROVIDER", "ollama").lower()
     
     if provider in ["bailian", "deepseek"]:
-        return os.getenv("DEEPSEEK_MODEL", "deepseek-v3")
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-v3.2-exp")
     elif provider == "openai":
         return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     elif provider == "ollama":
