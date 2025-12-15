@@ -28,6 +28,31 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from mapper import color_kegg_pathway, get_pathway_statistics
 
+# Import v2.0 modules
+try:
+    from gsea_module import (
+        handle_run_enrichr,
+        handle_run_gsea,
+        handle_get_gene_sets,
+        check_gsea_available
+    )
+    GSEA_AVAILABLE = check_gsea_available()
+except ImportError:
+    GSEA_AVAILABLE = False
+    print("[BioEngine] GSEA module not available", file=sys.stderr)
+
+try:
+    from image_module import (
+        handle_upload_image,
+        handle_analyze_image,
+        handle_list_images,
+        check_image_available
+    )
+    IMAGE_AVAILABLE = check_image_available()
+except ImportError:
+    IMAGE_AVAILABLE = False
+    print("[BioEngine] Image module not available", file=sys.stderr)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -1274,11 +1299,24 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "COLOR_PATHWAY": handle_color_pathway,
             "SEARCH_PATHWAY": handle_search_pathways,
             "DOWNLOAD_PATHWAY": handle_download_pathway,
+            "LIST_TEMPLATES": handle_list_templates,
             # AI Chat handlers (Logic Lock)
             "CHAT": handle_chat,
             "CHAT_CONFIRM": handle_chat_confirm,
             "CHAT_REJECT": handle_chat_reject,
         }
+        
+        # V2.0: Add GSEA handlers if available
+        if GSEA_AVAILABLE:
+            return_handlers["ENRICHR"] = handle_run_enrichr
+            return_handlers["GSEA"] = handle_run_gsea
+            return_handlers["GET_GENE_SETS"] = handle_get_gene_sets
+        
+        # V2.0: Add Image handlers if available
+        if IMAGE_AVAILABLE:
+            return_handlers["UPLOAD_IMAGE"] = handle_upload_image
+            return_handlers["ANALYZE_IMAGE"] = handle_analyze_image
+            return_handlers["LIST_IMAGES"] = handle_list_images
 
         # Handlers that send response directly (new style)
         direct_send_handlers = {
@@ -1375,6 +1413,49 @@ def run():
 
 
 # --- KEGG Search & Download ---
+def list_local_templates() -> List[Dict[str, Any]]:
+    """
+    Enumerate available pathway templates from user and bundled locations.
+    User templates take priority (deduplicate by ID).
+    """
+    candidate_dirs = [
+        Path.home() / '.bioviz_local' / 'templates',
+        Path(__file__).parent.parent / 'assets' / 'templates',
+        Path(sys.executable).parent / 'assets' / 'templates',
+        Path(sys.executable).parent.parent / 'Resources' / 'assets' / 'templates',
+        Path(sys.executable).parent.parent / 'Resources' / '_up_' / 'assets' / 'templates',
+        Path.cwd() / 'assets' / 'templates',
+        Path.cwd().parent / 'assets' / 'templates',
+    ]
+
+    seen: set[str] = set()
+    templates: List[Dict[str, Any]] = []
+
+    for folder in candidate_dirs:
+        if not folder.exists() or not folder.is_dir():
+            continue
+        for tpl_file in sorted(folder.glob("*.json")):
+            try:
+                with open(tpl_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                tpl_id = data.get("id") or tpl_file.stem
+                if tpl_id in seen:
+                    continue  # user folder already provided this ID
+                name = data.get("name") or tpl_id
+                desc = data.get("description") or name
+                types = data.get("types") or ['gene', 'protein', 'cell']
+                templates.append({
+                    "id": tpl_id,
+                    "name": name,
+                    "description": desc,
+                    "path": str(tpl_file),
+                    "types": types,
+                })
+                seen.add(tpl_id)
+            except Exception as e:
+                print(f"[BioEngine] Skip template {tpl_file}: {e}", file=sys.stderr)
+
+    return templates
 
 def search_kegg_pathways(query: str) -> List[Dict[str, str]]:
     """
@@ -1648,6 +1729,10 @@ def handle_download_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not pid:
          return {"status": "error", "message": "No pathway ID provided"}
     return download_kegg_pathway(pid)
+
+def handle_list_templates(_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """List local pathway templates from user folder and bundled assets."""
+    return {"status": "ok", "templates": list_local_templates()}
 
 if __name__ == "__main__":
     run()
