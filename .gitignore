@@ -63,3 +63,4 @@ Thumbs.db
 sample_data/report_*
 sample_data/*_stat_*
 sample_data/*.svg
+.env

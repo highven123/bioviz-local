@@ -1,6 +1,7 @@
 """
 BioViz Local - AI Core Engine
-Handles AI interactions with Logic Lock safety protocol using DeepSeek API.
+Handles AI interactions with Logic Lock safety protocol.
+Supports: OpenAI, DeepSeek, Ollama, and other OpenAI-compatible APIs.
 """
 
 import os
@@ -20,15 +21,78 @@ from ai_tools import (
 
 
 # ============================================
-# DeepSeek API Configuration
+# Flexible API Configuration
 # ============================================
-# DeepSeek uses OpenAI-compatible API
-client = OpenAI(
-    api_key="sk-a360a14e902a42288d9517620b8d6a35",
-    base_url="https://api.deepseek.com"
-)
+# Configure via environment variables:
+# 
+# For DeepSeek:
+#   export DEEPSEEK_API_KEY="your-key-here"
+#   export AI_PROVIDER="deepseek"
+#
+# For OpenAI:
+#   export OPENAI_API_KEY="your-key-here"
+#   export AI_PROVIDER="openai"
+#
+# For Ollama (local):
+#   export AI_PROVIDER="ollama"
+#   export OLLAMA_BASE_URL="http://localhost:11434/v1"  # optional
+# ============================================
 
-DEFAULT_MODEL = "deepseek-chat"
+def get_ai_client() -> OpenAI:
+    """
+    Initialize AI client based on environment configuration.
+    """
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    
+    if provider == "deepseek":
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            print("[AI Core] Warning: DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
+            api_key = "sk-placeholder"
+        
+        return OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com"
+        )
+    
+    elif provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        return OpenAI(api_key=api_key)
+    
+    elif provider == "ollama":
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        return OpenAI(
+            api_key="ollama",  # Ollama doesn't require a real key
+            base_url=base_url
+        )
+    
+    else:
+        # Custom provider
+        api_key = os.getenv("CUSTOM_API_KEY", "placeholder")
+        base_url = os.getenv("CUSTOM_BASE_URL", "http://localhost:11434/v1")
+        return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def get_model_name() -> str:
+    """Get the model name based on provider."""
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    
+    if provider == "deepseek":
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    elif provider == "openai":
+        return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    elif provider == "ollama":
+        return os.getenv("OLLAMA_MODEL", "llama3")
+    else:
+        return os.getenv("CUSTOM_MODEL", "gpt-3.5-turbo")
+
+
+# Initialize client
+client = get_ai_client()
+DEFAULT_MODEL = get_model_name()
 
 
 # --- System Prompt ---
@@ -87,7 +151,7 @@ def process_query(
     tools = get_openai_tools_schema()
     
     try:
-        # Call DeepSeek API
+        # Call AI API
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=messages,
