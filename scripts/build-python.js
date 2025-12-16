@@ -133,7 +133,15 @@ function buildPython() {
         const exclusions = getExclusionList();
         const excludeArgs = exclusions.map(mod => `--exclude-module ${mod}`).join(' ');
 
+        // Hidden imports needed for pkg_resources/setuptools vendored packages
+        const hiddenImports = [
+            'jaraco', 'jaraco.text', 'jaraco.functools', 'jaraco.context',
+            'platformdirs', 'tomli', 'email', 'calendar'
+        ];
+        const hiddenImportArgs = hiddenImports.map(mod => `--hidden-import ${mod}`).join(' ');
+
         console.log(`[build-python] Excluding ${exclusions.length} modules...`);
+        console.log(`[build-python] Adding ${hiddenImports.length} hidden imports...`);
 
         const pyinstallerCmd = [
             'pyinstaller',
@@ -142,6 +150,7 @@ function buildPython() {
             '--strip',  // Strip debug symbols (Unix only, ignored on Windows)
             addDataArg,
             excludeArgs,
+            hiddenImportArgs,
             '--name bio-engine',
             `--distpath "${PYTHON_DIR}/dist"`,
             `"${PYTHON_ENTRY}"`
