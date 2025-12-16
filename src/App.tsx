@@ -972,6 +972,7 @@ function App() {
       <AIEventPanel
         sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
         isConnected={isConnected}
+        onNavigateToGSEA={() => setLeftPanelView('gsea')}
       />
 
     </div>

@@ -100,6 +100,38 @@ def _explain_pathway(pathway_id: str) -> str:
     return descriptions.get(pathway_id, f"KEGG pathway {pathway_id}")
 
 
+def _run_enrichment(gene_list: List[str], gene_sets: str = "KEGG_2021_Human") -> Dict[str,  Any]:
+    """
+    Run enrichment analysis on a list of genes.
+    This tool automatically extracts genes from the current analysis context.
+    """
+    import gsea_module
+    import sys
+    
+    if not gene_list or len(gene_list) == 0:
+        return {
+            "error": "No genes provided for enrichment analysis",
+            "enriched_terms": []
+        }
+    
+    print(f"[AI Tool] Running Enrichr with {len(gene_list)} genes on {gene_sets}", file=sys.stderr)
+    
+    try:
+        enriched_terms = gsea_module.run_enrichr(gene_list, gene_sets)
+        return {
+            "gene_sets": gene_sets,
+            "input_genes": len(gene_list),
+            "enriched_terms": enriched_terms[:20],  # Top 20 results
+            "total_terms": len(enriched_terms)
+        }
+    except Exception as e:
+        print(f"[AI Tool] Enrichment error: {e}", file=sys.stderr)
+        return {
+            "error": str(e),
+            "enriched_terms": []
+        }
+
+
 # --- Yellow Zone Tools (Require Confirmation) ---
 
 def _update_analysis_thresholds(
@@ -221,6 +253,30 @@ TOOLS: List[ToolDefinition] = [
         },
         safety_level=SafetyLevel.GREEN,
         handler=_explain_pathway
+    ),
+    
+    ToolDefinition(
+        name="run_enrichment",
+        description="Run enrichment analysis (Enrichr) on a list of significant genes to find enriched pathways and gene sets. Use this when user asks about pathway enrichment or which pathways are most significant.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "gene_list": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of gene symbols to analyze (e.g., ['LDHA', 'PKM', 'ENO1'])"
+                },
+                "gene_sets": {
+                    "type": "string",
+                    "enum": ["KEGG_2021_Human", "GO_Biological_Process_2021", "GO_Molecular_Function_2021", "Reactome_2022"],
+                    "description": "Gene set database to use",
+                    "default": "KEGG_2021_Human"
+                }
+            },
+            "required": ["gene_list"]
+        },
+        safety_level=SafetyLevel.GREEN,
+        handler=_run_enrichment
     ),
     
     # Yellow Zone - Requires confirmation

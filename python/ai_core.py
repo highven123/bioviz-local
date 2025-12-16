@@ -209,6 +209,21 @@ def process_query(
             volcano_data = context['volcanoData']
             pathway_info += f"- Gene Expression Data: {len(volcano_data)} genes loaded\n"
             
+            # Extract significant genes for enrichment analysis
+            significant_genes = [
+                gene.get('gene') for gene in volcano_data 
+                if gene.get('status') in ['UP', 'DOWN']
+            ]
+            
+            if significant_genes:
+                pathway_info += f"- Significant Genes ({len(significant_genes)}): {', '.join(significant_genes[:10])}"
+                if len(significant_genes) > 10:
+                    pathway_info += f" ...and {len(significant_genes) - 10} more\n"
+                else:
+                    pathway_info += "\n"
+                
+                pathway_info += f"\n**TIP**: If user asks about pathway enrichment or which pathways are most significant, use the `run_enrichment` tool with this gene list: {significant_genes}\n"
+            
             # Show ALL gene expression data, not just top hits
             pathway_info += "\n**Gene Expression Values:**\n"
             for gene in volcano_data:

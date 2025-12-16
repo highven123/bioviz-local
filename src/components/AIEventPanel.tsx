@@ -18,11 +18,13 @@ interface AISuggestion {
 interface AIEventPanelProps {
     sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
     isConnected: boolean;
+    onNavigateToGSEA?: () => void;
 }
 
 export const AIEventPanel: React.FC<AIEventPanelProps> = ({
     sendCommand,
     isConnected,
+    onNavigateToGSEA,
 }) => {
     const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
     const [isMinimized, setIsMinimized] = useState(false);
@@ -79,9 +81,11 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
                     timestamp: Date.now(),
                     actions: [
                         {
-                            label: 'Run GSEA',
+                            label: 'Open GSEA',
                             handler: () => {
-                                sendCommand('GSEA', { auto: true });
+                                if (onNavigateToGSEA) {
+                                    onNavigateToGSEA();
+                                }
                             },
                         },
                     ],
