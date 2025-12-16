@@ -284,7 +284,16 @@ def process_query(
         # Case 2: Tool call requested
         tool_call = message.tool_calls[0]
         tool_name = tool_call.function.name
-        tool_args = json.loads(tool_call.function.arguments)
+        
+        # Safely parse tool arguments
+        try:
+            args_str = tool_call.function.arguments
+            print(f"[AI Core] Tool arguments string: {args_str[:200] if args_str else 'empty'}", file=sys.stderr)
+            tool_args = json.loads(args_str) if args_str else {}
+        except json.JSONDecodeError as e:
+            print(f"[AI Core] JSON decode error: {e}", file=sys.stderr)
+            print(f"[AI Core] Raw arguments: {tool_call.function.arguments}", file=sys.stderr)
+            return AIAction.chat(f"I tried to use a tool but encountered a formatting error. Please try rephrasing your request.")
         
         tool_def = get_tool(tool_name)
         if not tool_def:
