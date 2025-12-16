@@ -95,6 +95,7 @@ function App() {
 
   // Panel visibility states for collapsible layout
   const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showCenterPanel, setShowCenterPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(false); // Default collapsed
 
   const [showEvidencePopup, setShowEvidencePopup] = useState(false);
@@ -448,49 +449,6 @@ function App() {
             />
             {isConnected ? 'Engine Ready' : 'Connecting...'}
           </div>
-
-          {/* Panel Toggle Buttons */}
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <button
-              onClick={() => setShowLeftPanel(!showLeftPanel)}
-              title={showLeftPanel ? 'Hide Data Panel' : 'Show Data Panel'}
-              style={{
-                width: '36px',
-                height: '36px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: showLeftPanel ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.05)',
-                border: showLeftPanel ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '18px',
-                transition: 'all 0.2s'
-              }}
-            >
-              📊
-            </button>
-
-            <button
-              onClick={() => setShowRightPanel(!showRightPanel)}
-              title={showRightPanel ? 'Hide AI Panel' : 'Show AI Panel'}
-              style={{
-                width: '36px',
-                height: '36px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: showRightPanel ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.05)',
-                border: showRightPanel ? '1px solid rgba(102, 126, 234, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '18px',
-                transition: 'all 0.2s'
-              }}
-            >
-              🤖
-            </button>
-          </div>
           {activeAnalysis && (
             <>
               <button
@@ -672,7 +630,12 @@ function App() {
         />
 
         {/* Center Panel: Pathway */}
-        <div className="panel-col" style={{ background: 'var(--bg-panel)' }}>
+        <div className="panel-col" style={{
+          background: 'var(--bg-panel)',
+          opacity: showCenterPanel ? 1 : 0.1,
+          pointerEvents: showCenterPanel ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease'
+        }}>
           <div className="panel-header">
             <span>Pathway Landscape</span>
 
@@ -1073,6 +1036,83 @@ function App() {
             }}
           />
         )}
+
+        {/* Floating Panel Toggle Buttons - Right Edge */}
+        <div style={{
+          position: 'fixed',
+          right: '8px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          zIndex: 100,
+          background: 'rgba(11, 14, 20, 0.9)',
+          padding: '8px',
+          borderRadius: '12px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          backdropFilter: 'blur(10px)'
+        }}>
+          <button
+            onClick={() => setShowLeftPanel(!showLeftPanel)}
+            title={showLeftPanel ? 'Hide Data Panel (Left)' : 'Show Data Panel (Left)'}
+            style={{
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: showLeftPanel ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.05)',
+              border: showLeftPanel ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.15)',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '20px',
+              transition: 'all 0.2s'
+            }}
+          >
+            📊
+          </button>
+
+          <button
+            onClick={() => setShowCenterPanel(!showCenterPanel)}
+            title={showCenterPanel ? 'Hide Pathway (Center)' : 'Show Pathway (Center)'}
+            style={{
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: showCenterPanel ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.05)',
+              border: showCenterPanel ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.15)',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '20px',
+              transition: 'all 0.2s'
+            }}
+          >
+            🗺️
+          </button>
+
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            title={showRightPanel ? 'Hide AI Panel (Right)' : 'Show AI Panel (Right)'}
+            style={{
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: showRightPanel ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.05)',
+              border: showRightPanel ? '1px solid rgba(102, 126, 234, 0.5)' : '1px solid rgba(255,255,255,0.15)',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '20px',
+              transition: 'all 0.2s'
+            }}
+          >
+            🤖
+          </button>
+        </div>
 
       </main>
 
