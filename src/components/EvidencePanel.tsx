@@ -30,11 +30,11 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
     if (!gene) {
         return (
             <div className="empty-evidence">
-                <div>
-                    <div className="empty-icon">🔍</div>
-                    <p>
-                        Select a {labelSingular.toLowerCase()} from the volcano
-                        plot or pathway to view details.
+                <div className="click-prompt">
+                    <div className="empty-icon">👆</div>
+                    <p className="prompt-text">Click to show evidence</p>
+                    <p className="prompt-hint">
+                        Select a {labelSingular.toLowerCase()} from the volcano plot or pathway
                     </p>
                 </div>
             </div>

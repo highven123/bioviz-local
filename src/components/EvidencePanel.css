@@ -126,5 +126,22 @@
 .empty-icon {
     font-size: 48px;
     margin-bottom: 16px;
-    opacity: 0.3;
+    opacity: 0.5;
+}
+
+.click-prompt {
+    text-align: center;
+}
+
+.prompt-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 8px 0;
+}
+
+.prompt-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0;
 }
