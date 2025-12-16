@@ -66,10 +66,11 @@ function getExclusionList() {
         'unittest', 'test', 'tests',
         'pytest', 'nose', 'doctest',
         'pdb', 'profile', 'pstats',
-        'distutils', 'setuptools', 'pip',
+        'setuptools', 'pip',
+        // NOTE: distutils removed - causes PyInstaller conflict in Python 3.12+
+        // NOTE: pandas/numpy/scipy KEPT - required for gseapy
 
-        // === Data Science (Save ~50MB+) ===
-        'pandas', 'numpy', 'scipy',
+        // === Data Science - Only exclude unused packages ===
         'matplotlib', 'seaborn', 'plotly',
         'PIL', 'Pillow',
         'sklearn', 'scikit-learn',
