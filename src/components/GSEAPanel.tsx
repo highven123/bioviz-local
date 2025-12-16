@@ -126,7 +126,7 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     const runGSEA = async () => {
         const ranking = getGeneRanking();
         if (Object.keys(ranking).length === 0) {
-            setError('No gene data found. Load data first.');
+            setError('⚠️ 未找到基因数据。\n\n请先完成以下步骤：\n1. 上传差异表达数据\n2. 设置列映射\n3. 选择通路并运行分析\n4. 分析完成后再使用 GSEA');
             return;
         }
 
