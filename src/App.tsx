@@ -877,6 +877,7 @@ function App() {
                 sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
                 volcanoData={activeAnalysis?.volcano_data}
                 isConnected={isConnected}
+                lastResponse={lastResponse}
               />
             )}
             {leftPanelView === 'images' && (

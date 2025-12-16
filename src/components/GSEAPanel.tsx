@@ -22,6 +22,7 @@ interface GSEAPanelProps {
     sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
     volcanoData?: Array<{ gene: string; x: number; y: number; status: string }>;
     isConnected: boolean;
+    lastResponse?: any;  // Add this to receive backend responses
 }
 
 type AnalysisMode = 'enrichr' | 'gsea';
@@ -41,6 +42,7 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     sendCommand,
     volcanoData,
     isConnected,
+    lastResponse,
 }) => {
     const [mode, setMode] = useState<AnalysisMode>('enrichr');
     const [selectedGeneSet, setSelectedGeneSet] = useState('KEGG_2021_Human');
@@ -49,6 +51,32 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     const [gseaUp, setGseaUp] = useState<GSEAResult[]>([]);
     const [gseaDown, setGseaDown] = useState<GSEAResult[]>([]);
     const [error, setError] = useState<string | null>(null);
+
+    // Handle responses from backend
+    useEffect(() => {
+        if (!lastResponse) return;
+
+        if (lastResponse.cmd === 'ENRICHR') {
+            setIsLoading(false);
+            if (lastResponse.status === 'ok' && lastResponse.enriched_terms) {
+                setEnrichrResults(lastResponse.enriched_terms);
+                setError(null);
+            } else if (lastResponse.status === 'error') {
+                setError(lastResponse.message || 'Enrichr analysis failed');
+            }
+        }
+
+        if (lastResponse.cmd === 'GSEA') {
+            setIsLoading(false);
+            if (lastResponse.status === 'ok') {
+                setGseaUp(lastResponse.up_regulated || []);
+                setGseaDown(lastResponse.down_regulated || []);
+                setError(null);
+            } else if (lastResponse.status === 'error') {
+                setError(lastResponse.message || 'GSEA analysis failed');
+            }
+        }
+    }, [lastResponse]);
 
     // Extract gene lists from volcano data
     const getSignificantGenes = () => {
