@@ -892,6 +892,7 @@ function App() {
                 isConnected={isConnected}
                 currentFilePath={activeAnalysis?.sourceFilePath}
                 lastResponse={lastResponse}
+                onNavigateToChat={() => setLeftPanelView('ai-chat')}
               />
             )}
           </div>

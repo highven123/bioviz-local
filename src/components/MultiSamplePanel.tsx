@@ -16,7 +16,8 @@ interface MultiSamplePanelProps {
     isConnected: boolean;
     onSampleGroupChange?: (groupName: string, data: Array<{ gene: string; logfc: number; pvalue: number }>) => void;
     currentFilePath?: string;
-    lastResponse?: any;  // Add this to receive backend responses
+    lastResponse?: any;
+    onNavigateToChat?: () => void;  // Callback to switch to AI Chat tab
 }
 
 export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
@@ -25,6 +26,7 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
     onSampleGroupChange,
     currentFilePath,
     lastResponse,
+    onNavigateToChat,
 }) => {
     const [multiSampleData, setMultiSampleData] = useState<MultiSampleData | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<string>('');
@@ -212,6 +214,10 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
                                 sendCommand('CHAT', {
                                     query: `比较所有样本组 (${sampleGroups.join(', ')}) 的差异表达模式`,
                                 });
+                                // Switch to AI Chat tab to show the response
+                                if (onNavigateToChat) {
+                                    onNavigateToChat();
+                                }
                             }}
                             disabled={!isConnected}
                         >
