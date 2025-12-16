@@ -210,7 +210,7 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
                             className="action-btn compare"
                             onClick={() => {
                                 sendCommand('CHAT', {
-                                    message: `比较所有样本组 (${sampleGroups.join(', ')}) 的差异表达模式`,
+                                    query: `比较所有样本组 (${sampleGroups.join(', ')}) 的差异表达模式`,
                                 });
                             }}
                             disabled={!isConnected}
