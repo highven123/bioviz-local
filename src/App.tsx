@@ -14,6 +14,7 @@ import { InsightBadges } from './components/InsightBadges';
 import { GSEAPanel } from './components/GSEAPanel';
 import { ImageUploader } from './components/ImageUploader';
 import { AIEventPanel } from './components/AIEventPanel';
+import { exportSession, importSession } from './utils/sessionExport';
 import { MultiSamplePanel } from './components/MultiSamplePanel';
 import { eventBus, BioVizEvents } from './stores/eventBus';
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
@@ -471,6 +472,50 @@ function App() {
             <span style={{ fontSize: '16px' }}>🤖</span>
             <span>BioViz AI Assistant</span>
           </button>
+          {activeAnalysis && (
+            <>
+              <button
+                onClick={() => exportSession(activeAnalysis)}
+                title="Export Session (JSON + Markdown)"
+                style={{
+                  padding: '6px 12px',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)'}
+              >
+                📥
+              </button>
+              <button
+                onClick={async () => {
+                  const imported = await importSession();
+                  if (imported) {
+                    setAnalysisResults(prev => [...prev, imported as any]);
+                    setActiveResultIndex(analysisResults.length);
+                  }
+                }}
+                title="Import Session (JSON)"
+                style={{
+                  padding: '6px 12px',
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+              >
+                📤
+              </button>
+            </>
+          )}
         </div>
       </header>
 
