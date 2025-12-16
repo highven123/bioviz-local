@@ -911,7 +911,7 @@ function App() {
                         updated[activeResultIndex] = {
                           ...updated[activeResultIndex],
                           volcanoData: newVolcanoData,
-                          sourceFilePath: `${activeAnalysis.sourceFilePath} (${groupName})`
+                          // Note: Don't modify sourceFilePath to avoid file loading errors
                         };
                       }
                       return updated;
