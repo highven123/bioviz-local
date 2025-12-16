@@ -532,11 +532,11 @@ function App() {
         style={{
           display: workflowStep === 'viz' ? 'grid' : 'none',
           gridTemplateColumns: `
-            ${showLeftPanel ? colSizes[0] + '%' : '0'}
+            ${showLeftPanel ? '1fr' : '0'}
             ${showLeftPanel && showCenterPanel ? '6px' : '0'}
-            ${showCenterPanel ? (100 - (showLeftPanel ? colSizes[0] : 0) - (showRightPanel ? colSizes[2] : 0)) + '%' : '0'}
+            ${showCenterPanel ? '2fr' : '0'}
             ${showCenterPanel && showRightPanel ? '6px' : '0'}
-            ${showRightPanel ? colSizes[2] + '%' : '0'}
+            ${showRightPanel ? '1fr' : '0'}
           `,
           gap: '0',
           transition: 'grid-template-columns 0.3s ease',
