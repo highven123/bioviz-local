@@ -878,6 +878,7 @@ function App() {
                       gene: d.gene,
                       x: d.logfc,
                       y: -Math.log10(d.pvalue),
+                      pvalue: d.pvalue,
                       status: d.logfc > 0 && d.pvalue < 0.05 ? 'UP' as const :
                         (d.logfc < 0 && d.pvalue < 0.05 ? 'DOWN' as const : 'NS' as const)
                     }));
