@@ -891,6 +891,7 @@ function App() {
                 sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
                 isConnected={isConnected}
                 currentFilePath={activeAnalysis?.sourceFilePath}
+                lastResponse={lastResponse}
               />
             )}
           </div>

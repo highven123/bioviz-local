@@ -16,6 +16,7 @@ interface MultiSamplePanelProps {
     isConnected: boolean;
     onSampleGroupChange?: (groupName: string, data: Array<{ gene: string; logfc: number; pvalue: number }>) => void;
     currentFilePath?: string;
+    lastResponse?: any;  // Add this to receive backend responses
 }
 
 export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
@@ -23,12 +24,32 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
     isConnected,
     onSampleGroupChange,
     currentFilePath,
+    lastResponse,
 }) => {
     const [multiSampleData, setMultiSampleData] = useState<MultiSampleData | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'tabs' | 'slider'>('tabs');
+
+    // Handle responses from backend
+    useEffect(() => {
+        if (!lastResponse) return;
+
+        if (lastResponse.cmd === 'LOAD_MULTI_SAMPLE') {
+            setIsLoading(false);
+            if (lastResponse.status === 'ok') {
+                setMultiSampleData(lastResponse);
+                // Auto-select first group
+                if (lastResponse.sample_groups?.length > 0) {
+                    setSelectedGroup(lastResponse.sample_groups[0]);
+                }
+                setError(null);
+            } else if (lastResponse.status === 'error') {
+                setError(lastResponse.message || 'Failed to load multi-sample data');
+            }
+        }
+    }, [lastResponse]);
 
     // Load multi-sample data when file path changes
     useEffect(() => {
@@ -43,10 +64,8 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
 
         try {
             await sendCommand('LOAD_MULTI_SAMPLE', { path: filePath });
-            // Response will be handled via lastResponse in parent
         } catch (err) {
             setError(`Failed to load multi-sample data: ${err}`);
-        } finally {
             setIsLoading(false);
         }
     };
@@ -78,9 +97,6 @@ export const MultiSamplePanel: React.FC<MultiSamplePanelProps> = ({
             unchanged: data.length - upregulated - downregulated,
         };
     }, [multiSampleData, selectedGroup]);
-
-    // Suppress unused variable warning - setMultiSampleData will be used when handling response
-    void setMultiSampleData;
 
     if (!isMultiSample && !isLoading) {
         return (
