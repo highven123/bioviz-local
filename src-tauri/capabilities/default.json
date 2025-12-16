@@ -20,6 +20,8 @@
     "shell:allow-stdin-write",
     "shell:allow-kill",
     "dialog:default",
+    "dialog:allow-save",
+    "dialog:allow-open",
     "fs:default",
     "fs:allow-home-write-recursive",
     "fs:allow-temp-read-recursive",
