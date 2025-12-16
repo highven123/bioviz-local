@@ -291,9 +291,15 @@ def process_query(
             print(f"[AI Core] Tool arguments string: {args_str[:200] if args_str else 'empty'}", file=sys.stderr)
             tool_args = json.loads(args_str) if args_str else {}
         except json.JSONDecodeError as e:
-            print(f"[AI Core] JSON decode error: {e}", file=sys.stderr)
-            print(f"[AI Core] Raw arguments: {tool_call.function.arguments}", file=sys.stderr)
-            return AIAction.chat(f"I tried to use a tool but encountered a formatting error. Please try rephrasing your request.")
+            error_detail = f"{str(e)} at position {e.pos}" if hasattr(e, 'pos') else str(e)
+            print(f"[AI Core] JSON decode error: {error_detail}", file=sys.stderr)
+            print(f"[AI Core] Raw arguments (full): {tool_call.function.arguments}", file=sys.stderr)
+            return AIAction.chat(
+                f"遇到工具参数解析错误。\n"
+                f"错误详情: {error_detail}\n"
+                f"原始参数: {args_str[:100] if args_str else 'empty'}...\n"
+                f"这可能是 API 的临时问题，请重试或换个方式提问。"
+            )
         
         tool_def = get_tool(tool_name)
         if not tool_def:
