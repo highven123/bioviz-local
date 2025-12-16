@@ -1,5 +1,5 @@
-# BioViz Local - Production Dependencies (Minimal)
-# Goal: Keep Python binary under 100MB
+# BioViz Local - Production Dependencies
+# For PyInstaller build
 
 # Core AI functionality
 openai>=1.0.0
@@ -17,6 +17,10 @@ python-pptx>=0.6.21
 # HTTP requests (for KEGG API)
 requests>=2.25.0
 
-# NOTE: NO pandas, numpy, matplotlib, langchain, jupyter, tkinter
-# We use native Python data structures to save ~50MB+
+# Environment variables
 python-dotenv>=1.0.0
+
+# GSEA/Enrichment Analysis (required for GSEA panel to work)
+gseapy>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
