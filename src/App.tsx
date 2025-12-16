@@ -533,9 +533,9 @@ function App() {
           display: workflowStep === 'viz' ? 'grid' : 'none',
           gridTemplateColumns: `
             ${showLeftPanel ? colSizes[0] + '%' : '0'}
-            ${showLeftPanel ? '6px' : '0'}
-            ${100 - (showLeftPanel ? colSizes[0] : 0) - (showRightPanel ? colSizes[2] : 0)}%
-            ${showRightPanel ? '6px' : '0'}
+            ${showLeftPanel && showCenterPanel ? '6px' : '0'}
+            ${showCenterPanel ? (100 - (showLeftPanel ? colSizes[0] : 0) - (showRightPanel ? colSizes[2] : 0)) + '%' : '0'}
+            ${showCenterPanel && showRightPanel ? '6px' : '0'}
             ${showRightPanel ? colSizes[2] + '%' : '0'}
           `,
           gap: '0',
@@ -632,8 +632,8 @@ function App() {
         {/* Center Panel: Pathway */}
         <div className="panel-col" style={{
           background: 'var(--bg-panel)',
-          opacity: showCenterPanel ? 1 : 0.1,
-          pointerEvents: showCenterPanel ? 'auto' : 'none',
+          overflow: 'hidden',
+          opacity: showCenterPanel ? 1 : 0,
           transition: 'opacity 0.2s ease'
         }}>
           <div className="panel-header">
