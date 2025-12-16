@@ -92,6 +92,10 @@ function App() {
   const [leftView, setLeftView] = useState<'chart' | 'table'>('chart');
   const [rightPanelView, setRightPanelView] = useState<'ai-chat' | 'gsea' | 'images' | 'multi-sample'>('ai-chat');
 
+  // Panel visibility states for collapsible layout
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(false); // Default collapsed
+
   const [showEvidencePopup, setShowEvidencePopup] = useState(false);
   const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
 
@@ -443,39 +447,49 @@ function App() {
             />
             {isConnected ? 'Engine Ready' : 'Connecting...'}
           </div>
-          <button
-            onClick={() => setRightPanelView('ai-chat')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '13px',
-              color: rightPanelView === 'ai-chat' ? '#fff' : 'var(--text-secondary)',
-              padding: '6px 14px',
-              background: rightPanelView === 'ai-chat'
-                ? 'rgba(102, 126, 234, 0.3)'
-                : 'rgba(102, 126, 234, 0.1)',
-              border: rightPanelView === 'ai-chat'
-                ? '1px solid rgba(102, 126, 234, 0.5)'
-                : '1px solid transparent',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              if (rightPanelView !== 'ai-chat') {
-                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.15)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (rightPanelView !== 'ai-chat') {
-                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
-              }
-            }}
-          >
-            <span style={{ fontSize: '16px' }}>🤖</span>
-            <span>BioViz AI Assistant</span>
-          </button>
+
+          {/* Panel Toggle Buttons */}
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowLeftPanel(!showLeftPanel)}
+              title={showLeftPanel ? 'Hide Data Panel' : 'Show Data Panel'}
+              style={{
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: showLeftPanel ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.05)',
+                border: showLeftPanel ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                transition: 'all 0.2s'
+              }}
+            >
+              📊
+            </button>
+
+            <button
+              onClick={() => setShowRightPanel(!showRightPanel)}
+              title={showRightPanel ? 'Hide AI Panel' : 'Show AI Panel'}
+              style={{
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: showRightPanel ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.05)',
+                border: showRightPanel ? '1px solid rgba(102, 126, 234, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                transition: 'all 0.2s'
+              }}
+            >
+              🤖
+            </button>
+          </div>
           {activeAnalysis && (
             <>
               <button
@@ -558,13 +572,25 @@ function App() {
         className="workbench-layout"
         style={{
           display: workflowStep === 'viz' ? 'grid' : 'none',
-          gridTemplateColumns: `${colSizes[0]}% 6px ${colSizes[1]}% 6px ${colSizes[2]}%`, // 6px for gutters
-          gap: '0', // Override default gap
+          gridTemplateColumns: `
+            ${showLeftPanel ? colSizes[0] + '%' : '0'}
+            ${showLeftPanel ? '6px' : '0'}
+            ${100 - (showLeftPanel ? colSizes[0] : 0) - (showRightPanel ? colSizes[2] : 0)}%
+            ${showRightPanel ? '6px' : '0'}
+            ${showRightPanel ? colSizes[2] + '%' : '0'}
+          `,
+          gap: '0',
+          transition: 'grid-template-columns 0.3s ease',
         }}
         ref={containerRef}
       >
         {/* Left Panel: Volcano / Data Table */}
-        <div className="panel-col" style={{ borderRight: '1px solid var(--border-subtle)' }}>
+        <div className="panel-col" style={{
+          borderRight: showLeftPanel ? '1px solid var(--border-subtle)' : 'none',
+          overflow: 'hidden',
+          opacity: showLeftPanel ? 1 : 0,
+          transition: 'opacity 0.2s ease'
+        }}>
           <div className="panel-header" style={{ justifyContent: 'space-between', paddingRight: '12px' }}>
             <div className="left-panel-toggle-group">
               <button
@@ -878,7 +904,11 @@ function App() {
         />
 
         {/* Right Panel: AI Chat */}
-        <div className="panel-col">
+        <div className="panel-col" style={{
+          overflow: 'hidden',
+          opacity: showRightPanel ? 1 : 0,
+          transition: 'opacity 0.2s ease'
+        }}>
           <div className="panel-header" style={{ display: 'flex', gap: '8px', padding: '8px 12px' }}>
             <button
               onClick={() => setRightPanelView('ai-chat')}
