@@ -405,12 +405,25 @@ function App() {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
           <div className="status-indicator">
             <div className={`status-dot ${!isConnected ? 'disconnected' : ''}`}
               style={{ backgroundColor: isConnected ? 'var(--color-success)' : 'var(--color-danger)' }}
             />
             {isConnected ? 'Engine Ready' : 'Connecting...'}
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            color: 'var(--text-secondary)',
+            padding: '4px 12px',
+            background: 'rgba(102, 126, 234, 0.1)',
+            borderRadius: '12px'
+          }}>
+            <span style={{ fontSize: '16px' }}>🤖</span>
+            <span>BioViz AI Assistant</span>
           </div>
         </div>
       </header>
