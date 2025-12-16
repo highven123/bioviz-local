@@ -412,19 +412,39 @@ function App() {
             />
             {isConnected ? 'Engine Ready' : 'Connecting...'}
           </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            color: 'var(--text-secondary)',
-            padding: '4px 12px',
-            background: 'rgba(102, 126, 234, 0.1)',
-            borderRadius: '12px'
-          }}>
+          <button
+            onClick={() => setLeftPanelView('ai-chat')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              color: leftPanelView === 'ai-chat' ? '#fff' : 'var(--text-secondary)',
+              padding: '6px 14px',
+              background: leftPanelView === 'ai-chat'
+                ? 'rgba(102, 126, 234, 0.3)'
+                : 'rgba(102, 126, 234, 0.1)',
+              border: leftPanelView === 'ai-chat'
+                ? '1px solid rgba(102, 126, 234, 0.5)'
+                : '1px solid transparent',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              if (leftPanelView !== 'ai-chat') {
+                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.15)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (leftPanelView !== 'ai-chat') {
+                e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
+              }
+            }}
+          >
             <span style={{ fontSize: '16px' }}>🤖</span>
             <span>BioViz AI Assistant</span>
-          </div>
+          </button>
         </div>
       </header>
 
