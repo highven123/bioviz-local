@@ -44,6 +44,7 @@ interface AnalysisResult {
   analysis_table_path?: string;
   sourceFilePath: string;
   insights?: AnalysisInsights;  // AI-generated insights
+  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;  // AI chat history per analysis
 }
 
 // Helper to derive base filename (without extension) from a full path
@@ -65,7 +66,22 @@ function App() {
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [maxWizardStep, setMaxWizardStep] = useState<1 | 2 | 3>(1);
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('upload');
-  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
+
+  // Restore analysisResults from localStorage on mount
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>(() => {
+    try {
+      const saved = localStorage.getItem('bioviz_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('[App] Restored', parsed.length, 'sessions from localStorage');
+        return parsed;
+      }
+    } catch (e) {
+      console.error('[App] Failed to restore sessions:', e);
+    }
+    return [];
+  });
+
   const [activeResultIndex, setActiveResultIndex] = useState<number>(0);
   const [filteredGenes, setFilteredGenes] = useState<string[]>([]);
   const [activeGene, setActiveGene] = useState<string | null>(null);
@@ -81,6 +97,16 @@ function App() {
 
   // License State (Simulated)
   const isPro = true;
+
+  // Auto-save analysisResults to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('bioviz_sessions', JSON.stringify(analysisResults));
+      console.log('[App] Saved', analysisResults.length, 'sessions to localStorage');
+    } catch (e) {
+      console.error('[App] Failed to save sessions:', e);
+    }
+  }, [analysisResults]);
 
   // --- Resizing Logic ---
   const [colSizes, setColSizes] = useState<number[]>([20, 55, 25]); // Left, Center, Right in %

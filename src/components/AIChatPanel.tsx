@@ -20,13 +20,27 @@ interface AIChatPanelProps {
         volcanoData?: any[];
         statistics?: any;
     };
+    chatHistory?: Message[];  // Chat history from parent
+    onChatUpdate?: (messages: Message[]) => void;  // Callback to update parent
 }
 
-export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnected, lastResponse, analysisContext }) => {
-    const [messages, setMessages] = useState<Message[]>([]);
+export const AIChatPanel: React.FC<AIChatPanelProps> = ({
+    sendCommand,
+    isConnected,
+    lastResponse,
+    analysisContext,
+    chatHistory = [],
+    onChatUpdate
+}) => {
+    const [messages, setMessages] = useState<Message[]>(chatHistory);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Sync with parent chatHistory when it changes (e.g., switching analysis)
+    useEffect(() => {
+        setMessages(chatHistory);
+    }, [chatHistory]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -35,6 +49,17 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnect
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Helper to update messages and notify parent
+    const updateMessages = (updater: (prev: Message[]) => Message[]) => {
+        setMessages(prev => {
+            const updated = updater(prev);
+            if (onChatUpdate) {
+                onChatUpdate(updated);
+            }
+            return updated;
+        });
+    };
 
     // Listen for AI responses from useBioEngine's lastResponse
     useEffect(() => {
