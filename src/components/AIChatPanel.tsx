@@ -154,12 +154,12 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({ sendCommand, isConnect
     return (
         <div className="ai-chat-panel">
             <div className="chat-header">
+                <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+                    {isConnected ? '● Online' : '● Offline'}
+                </div>
                 <div className="header-title">
                     <span className="ai-icon">🤖</span>
                     <span>BioViz AI Assistant</span>
-                </div>
-                <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-                    {isConnected ? '● Online' : '● Offline'}
                 </div>
             </div>
 
