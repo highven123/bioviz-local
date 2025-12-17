@@ -128,6 +128,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             console.log('[AIChatPanel] Response type:', lastResponse.type, 'cmd:', lastResponse.cmd);
 
             // Handle both CHAT and EXECUTE responses
+            const structuredCmds = new Set(['SUMMARIZE_ENRICHMENT', 'SUMMARIZE_DE', 'PARSE_FILTER', 'GENERATE_HYPOTHESIS', 'DISCOVER_PATTERNS', 'DESCRIBE_VISUALIZATION']);
             if (lastResponse.cmd === 'CHAT' && (lastResponse.type === 'CHAT' || lastResponse.type === 'EXECUTE')) {
                 console.log('[AIChatPanel] Processing AI response, content:', lastResponse.content?.substring(0, 50));
 
@@ -193,6 +194,16 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                         timestamp: Date.now()
                     }];
                 });
+                setIsLoading(false);
+            } else if (lastResponse.cmd && structuredCmds.has(lastResponse.cmd)) {
+                // Display structured prompt responses (e.g., SUMMARIZE_ENRICHMENT)
+                const content = lastResponse.summary || lastResponse.content || lastResponse.message;
+                if (content) {
+                    updateMessages(prev => [
+                        ...prev.filter(m => m.content !== 'Processing your request...'),
+                        { role: 'assistant', content, timestamp: Date.now() }
+                    ]);
+                }
                 setIsLoading(false);
             } else {
                 console.log('[AIChatPanel] Ignoring non-CHAT response');

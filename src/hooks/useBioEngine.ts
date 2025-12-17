@@ -16,6 +16,8 @@ export interface SidecarResponse {
     request_id?: string;
     cmd?: string;
     message?: string;
+    summary?: string;
+    model?: string;
     data?: unknown;
     error?: string;
     [key: string]: unknown;
@@ -41,6 +43,14 @@ export interface UseBioEngineReturn {
     restartSidecar: () => Promise<void>;
     /** Resolve (confirm or reject) an active proposal */
     resolveProposal: (proposalId: string, accepted: boolean) => Promise<void>;
+    /** Summarize enrichment results using structured prompts */
+    summarizeEnrichment: (enrichmentData: unknown, extras?: Record<string, unknown>) => Promise<SidecarResponse | void>;
+    /** Summarize differential expression results */
+    summarizeDifferentialExpression: (volcanoData: unknown, thresholds?: Record<string, unknown>) => Promise<SidecarResponse | void>;
+    /** Parse natural language filter queries into structured logic */
+    parseFilterQuery: (naturalLanguageQuery: string, availableFields?: unknown) => Promise<SidecarResponse | void>;
+    /** Generate speculative hypotheses (Phase 3) */
+    generateHypothesis: (significantGenes: unknown, pathways?: unknown, volcanoData?: unknown) => Promise<SidecarResponse | void>;
 }
 
 /**
@@ -375,6 +385,25 @@ export function useBioEngine(): UseBioEngineReturn {
         setActiveProposal(null);
     }, [activeProposal, sendCommand]);
 
+    /**
+     * Structured AI helpers built on dedicated backend commands
+     */
+    const summarizeEnrichment = useCallback(async (enrichmentData: unknown, extras: Record<string, unknown> = {}): Promise<SidecarResponse | void> => {
+        return sendCommand('SUMMARIZE_ENRICHMENT', { enrichment_data: enrichmentData, ...extras }, true);
+    }, [sendCommand]);
+
+    const summarizeDifferentialExpression = useCallback(async (volcanoData: unknown, thresholds: Record<string, unknown> = {}): Promise<SidecarResponse | void> => {
+        return sendCommand('SUMMARIZE_DE', { volcano_data: volcanoData, thresholds }, true);
+    }, [sendCommand]);
+
+    const parseFilterQuery = useCallback(async (naturalLanguageQuery: string, availableFields?: unknown): Promise<SidecarResponse | void> => {
+        return sendCommand('PARSE_FILTER', { query: naturalLanguageQuery, available_fields: availableFields }, true);
+    }, [sendCommand]);
+
+    const generateHypothesis = useCallback(async (significantGenes: unknown, pathways?: unknown, volcanoData?: unknown): Promise<SidecarResponse | void> => {
+        return sendCommand('GENERATE_HYPOTHESIS', { significant_genes: significantGenes, pathways, volcano_data: volcanoData }, true);
+    }, [sendCommand]);
+
     return {
         isConnected,
         isLoading,
@@ -385,6 +414,10 @@ export function useBioEngine(): UseBioEngineReturn {
         checkHealth,
         restartSidecar,
         resolveProposal,
+        summarizeEnrichment,
+        summarizeDifferentialExpression,
+        parseFilterQuery,
+        generateHypothesis,
     };
 }
 

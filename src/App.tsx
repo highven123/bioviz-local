@@ -1182,7 +1182,7 @@ function App() {
 
       {/* v2.0: AI Event Panel for proactive suggestions */}
       <AIEventPanel
-        sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
+        sendCommand={sendCommand}
         isConnected={isConnected}
         onNavigateToGSEA={() => setRightPanelView('gsea')}
         onExportSession={() => activeAnalysis && exportSession(activeAnalysis)}

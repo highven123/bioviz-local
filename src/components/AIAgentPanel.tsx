@@ -150,12 +150,18 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
 
     // Handle AI responses
     React.useEffect(() => {
-        if (!lastResponse || lastResponse.cmd !== 'CHAT') return;
-        if (lastResponse.content) {
+        if (!lastResponse) return;
+        const structuredCmds = new Set(['SUMMARIZE_ENRICHMENT', 'SUMMARIZE_DE', 'PARSE_FILTER', 'GENERATE_HYPOTHESIS', 'DISCOVER_PATTERNS', 'DESCRIBE_VISUALIZATION']);
+        if (lastResponse.cmd === 'CHAT' && lastResponse.content) {
             updateMessages(prev => {
                 const filtered = prev.filter(m => m.content !== 'Processing...');
                 return [...filtered, { role: 'assistant', content: lastResponse.content, timestamp: Date.now() }];
             });
+        } else if (lastResponse.cmd && structuredCmds.has(lastResponse.cmd)) {
+            const content = lastResponse.summary || lastResponse.content || lastResponse.message;
+            if (content) {
+                updateMessages(prev => [...prev, { role: 'assistant', content, timestamp: Date.now() }]);
+            }
         }
     }, [lastResponse]);
 

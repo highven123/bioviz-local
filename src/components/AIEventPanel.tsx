@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { eventBus, BioVizEvents } from '../stores/eventBus';
+import { SidecarResponse } from '../hooks/useBioEngine';
 import './AIEventPanel.css';
 
 interface AISuggestion {
@@ -16,7 +17,7 @@ interface AISuggestion {
 }
 
 interface AIEventPanelProps {
-    sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
+    sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<SidecarResponse | void>;
     isConnected: boolean;
     onNavigateToGSEA?: () => void;
     onExportSession?: () => void;
@@ -42,6 +43,35 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
     const dragStartPos = React.useRef({ x: 0, y: 0 });
     const dragOffset = React.useRef({ x: 0, y: 0 });
     const hasMoved = React.useRef(false);
+    const volcanoData = analysisContext?.volcanoData || [];
+    const significantGenes = volcanoData
+        .filter((g: any) => g.status === 'UP' || g.status === 'DOWN')
+        .map((g: any) => g.gene)
+        .filter(Boolean);
+
+    const addSuggestion = (title: string, message: string, type: AISuggestion['type'] = 'info') => {
+        const suggestion: AISuggestion = {
+            id: `${type}_${Date.now()}`,
+            type,
+            title,
+            message,
+            timestamp: Date.now(),
+        };
+        setSuggestions((prev) => [suggestion, ...prev].slice(0, 10));
+        setIsMinimized(false);
+    };
+
+    const runSkillCommand = async (title: string, cmd: string, payload: Record<string, unknown>, emptyMessage?: string) => {
+        try {
+            const response = await sendCommand(cmd, payload, true) as SidecarResponse;
+            const isOk = response && response.status === 'ok';
+            const summary = (response && typeof response === 'object' ? (response as any).summary : null) as string | null;
+            const message = summary || (response as any)?.content || response?.message || emptyMessage || 'Completed.';
+            addSuggestion(title, message, isOk ? 'success' : 'warning');
+        } catch (err: any) {
+            addSuggestion(title, `Failed: ${err?.message || String(err)}`, 'warning');
+        }
+    };
 
     const handleMouseDown = (e: React.MouseEvent) => {
         e.preventDefault(); // Prevent text selection
@@ -265,6 +295,119 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
                             >
                                 <span className="skill-icon">📊</span>
                                 <span className="skill-name">Enrichment</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    await runSkillCommand(
+                                        'Enrichment Explanation',
+                                        'SUMMARIZE_ENRICHMENT',
+                                        {
+                                            enrichment_data: analysisContext?.pathway?.enriched_terms || analysisContext?.statistics?.enriched_terms,
+                                            volcano_data: volcanoData,
+                                            statistics: analysisContext?.statistics,
+                                        },
+                                        'Run enrichment first to explain the results.'
+                                    );
+                                }}
+                                title="Explain enrichment results with structured prompt"
+                                disabled={!analysisContext?.volcanoData}
+                            >
+                                <span className="skill-icon">🧠</span>
+                                <span className="skill-name">Explain</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    await runSkillCommand(
+                                        'Differential Expression Summary',
+                                        'SUMMARIZE_DE',
+                                        { volcano_data: volcanoData },
+                                        'Load differential expression data first.'
+                                    );
+                                }}
+                                title="Summarize significant genes and thresholds"
+                                disabled={!analysisContext?.volcanoData}
+                            >
+                                <span className="skill-icon">🧾</span>
+                                <span className="skill-name">Summarize</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    await runSkillCommand(
+                                        'Hypothesis (Phase 3)',
+                                        'GENERATE_HYPOTHESIS',
+                                        {
+                                            significant_genes: significantGenes,
+                                            pathways: analysisContext?.pathway?.enriched_terms,
+                                            volcano_data: volcanoData,
+                                        },
+                                        'Provide significant genes to generate a hypothesis.'
+                                    );
+                                }}
+                                title="Generate speculative mechanism hypotheses"
+                                disabled={significantGenes.length === 0}
+                            >
+                                <span className="skill-icon">💡</span>
+                                <span className="skill-name">Hypothesis</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    await runSkillCommand(
+                                        'Pattern Discovery (Phase 3)',
+                                        'DISCOVER_PATTERNS',
+                                        {
+                                            expression_matrix: volcanoData,
+                                        },
+                                        'Load expression data to discover patterns.'
+                                    );
+                                }}
+                                title="Discover co-expression patterns (exploratory)"
+                                disabled={!analysisContext?.volcanoData}
+                            >
+                                <span className="skill-icon">🔍</span>
+                                <span className="skill-name">Patterns</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    await runSkillCommand(
+                                        'Visualization Description',
+                                        'DESCRIBE_VISUALIZATION',
+                                        {
+                                            table_data: analysisContext?.pathway?.enriched_terms || volcanoData,
+                                        },
+                                        'Load data to describe visualization trends.'
+                                    );
+                                }}
+                                title="Describe chart/table trends"
+                                disabled={!analysisContext?.volcanoData}
+                            >
+                                <span className="skill-icon">📈</span>
+                                <span className="skill-name">Describe</span>
+                            </button>
+                            <button
+                                className="skill-card"
+                                onClick={async () => {
+                                    const filterQuery = prompt('Enter filter query (e.g., "log2FC > 2 and FDR < 0.01"):');
+                                    if (filterQuery) {
+                                        await runSkillCommand(
+                                            'Parse Filter Query',
+                                            'PARSE_FILTER',
+                                            {
+                                                query: filterQuery,
+                                                available_fields: ['gene', 'log2FC', 'pValue', 'FDR', 'status'],
+                                            },
+                                            'Filter query parsed successfully.'
+                                        );
+                                    }
+                                }}
+                                title="Parse natural language filters"
+                            >
+                                <span className="skill-icon">🔎</span>
+                                <span className="skill-name">Filter</span>
                             </button>
                             <button
                                 className="skill-card"

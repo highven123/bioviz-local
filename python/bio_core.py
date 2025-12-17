@@ -1295,6 +1295,97 @@ def handle_chat_reject(payload: Dict[str, Any]) -> Dict[str, Any]:
             "message": f"Error rejecting proposal: {str(e)}"
         }
 
+
+# ========================
+# AI Structured Prompt Handlers
+# ========================
+
+def handle_summarize_enrichment(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Summarize enrichment results using structured prompts."""
+    try:
+        from ai_tools import summarize_enrichment
+
+        enrichment_data = payload.get("enrichment_data") or payload.get("enriched_terms") or payload.get("data") or {}
+        volcano_data = payload.get("volcano_data") or payload.get("volcanoData")
+        context = payload.get("context") or {}
+        metadata = {
+            "pathway": payload.get("pathway") or context.get("pathway") or {},
+            "statistics": payload.get("statistics") or context.get("statistics") or {},
+        }
+
+        return summarize_enrichment(enrichment_data, volcano_data=volcano_data, metadata=metadata)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to summarize enrichment: {str(e)}"}
+
+
+def handle_summarize_de(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Summarize differential expression results."""
+    try:
+        from ai_tools import summarize_de_genes
+
+        volcano_data = payload.get("volcano_data") or payload.get("volcanoData") or []
+        thresholds = payload.get("thresholds") or {}
+        return summarize_de_genes(volcano_data, thresholds)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to summarize differential expression: {str(e)}"}
+
+
+def handle_parse_filter(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse natural language filters into structured logic."""
+    try:
+        from ai_tools import parse_filter_query
+
+        query = payload.get("query") or payload.get("text") or ""
+        available_fields = payload.get("available_fields") or payload.get("columns") or []
+        return parse_filter_query(query, available_fields)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to parse filter query: {str(e)}"}
+
+
+def handle_generate_hypothesis(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate Phase 3 hypotheses with explicit disclaimers."""
+    try:
+        from ai_tools import generate_hypothesis
+
+        significant_genes = payload.get("significant_genes") or payload.get("genes")
+        pathways = payload.get("pathways") or payload.get("enriched_terms")
+        volcano_data = payload.get("volcano_data") or payload.get("volcanoData")
+        return generate_hypothesis(significant_genes, pathways=pathways, volcano_data=volcano_data)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to generate hypothesis: {str(e)}"}
+
+
+def handle_discover_patterns(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run exploratory pattern discovery prompts."""
+    try:
+        from ai_tools import discover_patterns
+
+        expression_matrix = (
+            payload.get("expression_matrix")
+            or payload.get("expressionMatrix")
+            or payload.get("volcano_data")
+            or payload.get("volcanoData")
+        )
+        return discover_patterns(expression_matrix)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to discover patterns: {str(e)}"}
+
+
+def handle_describe_visualization(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Describe visualization trends without causal claims."""
+    try:
+        from ai_tools import describe_visualization
+
+        table_data = (
+            payload.get("table_data")
+            or payload.get("enrichment_data")
+            or payload.get("volcano_data")
+            or payload.get("volcanoData")
+        )
+        return describe_visualization(table_data)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to describe visualization: {str(e)}"}
+
 def process_command(command_obj: Dict[str, Any]) -> None:
     """Route command to appropriate handler."""
     global CURRENT_REQUEST_ID, CURRENT_CMD
@@ -1322,6 +1413,13 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "CHAT": handle_chat,
             "CHAT_CONFIRM": handle_chat_confirm,
             "CHAT_REJECT": handle_chat_reject,
+            # Structured prompt handlers
+            "SUMMARIZE_ENRICHMENT": handle_summarize_enrichment,
+            "SUMMARIZE_DE": handle_summarize_de,
+            "PARSE_FILTER": handle_parse_filter,
+            "GENERATE_HYPOTHESIS": handle_generate_hypothesis,
+            "DISCOVER_PATTERNS": handle_discover_patterns,
+            "DESCRIBE_VISUALIZATION": handle_describe_visualization,
         }
         
         # V2.0: Add GSEA handlers if available
