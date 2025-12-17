@@ -40,8 +40,11 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
     // Draggable state
     const [position, setPosition] = useState({ x: window.innerWidth - 80, y: window.innerHeight / 2 });
     const [isDragging, setIsDragging] = useState(false);
+    const [panelSize, setPanelSize] = useState({ width: 280, height: 440 });
+    const [isResizing, setIsResizing] = useState(false);
     const dragStartPos = React.useRef({ x: 0, y: 0 });
     const dragOffset = React.useRef({ x: 0, y: 0 });
+    const resizeStart = React.useRef({ x: 0, y: 0, width: 280, height: 440 });
     const hasMoved = React.useRef(false);
     const volcanoData = analysisContext?.volcanoData || [];
     const significantGenes = volcanoData
@@ -76,6 +79,7 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
     const handleMouseDown = (e: React.MouseEvent) => {
         e.preventDefault(); // Prevent text selection
         e.stopPropagation();
+        if (isResizing) return;
         setIsDragging(true);
         hasMoved.current = false;
         dragStartPos.current = { x: e.clientX, y: e.clientY };
@@ -113,33 +117,99 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
         };
     }, [isDragging]);
 
+    // Resizing logic with 8 directions
+    const startResize = (e: React.MouseEvent, direction: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsResizing(true);
+        resizeStart.current = {
+            x: e.clientX,
+            y: e.clientY,
+            width: panelSize.width,
+            height: panelSize.height
+        };
+        // Store direction in a ref
+        (resizeStart.current as any).direction = direction;
+    };
+
+    useEffect(() => {
+        if (!isResizing) return;
+
+        const handleResizeMove = (e: MouseEvent) => {
+            const dx = e.clientX - resizeStart.current.x;
+            const dy = e.clientY - resizeStart.current.y;
+            const direction = (resizeStart.current as any).direction || 'se';
+
+            const minWidth = 220;
+            const minHeight = 260;
+            const maxWidth = window.innerWidth - 50;
+            const maxHeight = window.innerHeight - 50;
+
+            let newWidth = panelSize.width;
+            let newHeight = panelSize.height;
+            let newX = position.x;
+            let newY = position.y;
+
+            // Handle horizontal resizing
+            if (direction.includes('e')) {
+                newWidth = Math.min(Math.max(resizeStart.current.width + dx, minWidth), maxWidth);
+            } else if (direction.includes('w')) {
+                const widthChange = -dx;
+                newWidth = Math.min(Math.max(resizeStart.current.width + widthChange, minWidth), maxWidth);
+                newX = position.x - (newWidth - panelSize.width);
+            }
+
+            // Handle vertical resizing
+            if (direction.includes('s')) {
+                newHeight = Math.min(Math.max(resizeStart.current.height + dy, minHeight), maxHeight);
+            } else if (direction.includes('n')) {
+                const heightChange = -dy;
+                newHeight = Math.min(Math.max(resizeStart.current.height + heightChange, minHeight), maxHeight);
+                newY = position.y - (newHeight - panelSize.height);
+            }
+
+            setPanelSize({ width: newWidth, height: newHeight });
+            if (newX !== position.x || newY !== position.y) {
+                setPosition({ x: newX, y: newY });
+            }
+        };
+
+        const handleResizeUp = () => {
+            setIsResizing(false);
+        };
+
+        document.addEventListener('mousemove', handleResizeMove);
+        document.addEventListener('mouseup', handleResizeUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleResizeMove);
+            document.removeEventListener('mouseup', handleResizeUp);
+        };
+    }, [isResizing, position, panelSize]);
+
     // Check boundaries when expanding to prevent overflow
     React.useEffect(() => {
         if (!isMinimized) {
             // Panel is expanded, check if it goes off-screen
-            const panelWidth = 200; // Match CSS width
-            const panelHeight = 400; // Approximate expanded height
+            const panelWidth = panelSize.width;
+            const panelHeight = panelSize.height;
 
             setPosition(prev => {
                 let newX = prev.x;
                 let newY = prev.y;
 
-                // Check right edge
                 if (prev.x + panelWidth > window.innerWidth) {
-                    newX = window.innerWidth - panelWidth - 10;
+                    newX = Math.max(10, window.innerWidth - panelWidth - 10);
                 }
 
-                // Check left edge
                 if (prev.x < 10) {
                     newX = 10;
                 }
 
-                // Check bottom edge
                 if (prev.y + panelHeight > window.innerHeight) {
-                    newY = window.innerHeight - panelHeight - 10;
+                    newY = Math.max(10, window.innerHeight - panelHeight - 10);
                 }
 
-                // Check top edge
                 if (prev.y < 10) {
                     newY = 10;
                 }
@@ -147,7 +217,7 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
                 return { x: newX, y: newY };
             });
         }
-    }, [isMinimized]);
+    }, [isMinimized, panelSize]);
 
     useEffect(() => {
         // Subscribe to AI suggestion events
@@ -241,7 +311,9 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
             style={{
                 left: position.x,
                 top: position.y,
-                transform: 'none' // Override CSS transform
+                transform: 'none', // Override CSS transform
+                width: isMinimized ? 56 : panelSize.width,
+                height: isMinimized ? 56 : panelSize.height,
             }}
             onMouseDown={handleMouseDown}
             onClick={(e) => {
@@ -514,6 +586,15 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
                             )}
                         </div>
                     ))}
+                    {/* 8-directional resize handles */}
+                    <div className="resize-handle resize-n" onMouseDown={(e) => startResize(e, 'n')} />
+                    <div className="resize-handle resize-s" onMouseDown={(e) => startResize(e, 's')} />
+                    <div className="resize-handle resize-e" onMouseDown={(e) => startResize(e, 'e')} />
+                    <div className="resize-handle resize-w" onMouseDown={(e) => startResize(e, 'w')} />
+                    <div className="resize-handle resize-ne" onMouseDown={(e) => startResize(e, 'ne')} />
+                    <div className="resize-handle resize-nw" onMouseDown={(e) => startResize(e, 'nw')} />
+                    <div className="resize-handle resize-se" onMouseDown={(e) => startResize(e, 'se')} />
+                    <div className="resize-handle resize-sw" onMouseDown={(e) => startResize(e, 'sw')} />
                 </div>
             )}
         </div>
