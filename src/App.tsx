@@ -99,7 +99,7 @@ function App() {
 
   // Draggable toolbar position (default: top-right of pathway view, accounting for left panel)
   const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth * 0.65, y: 80 });
-  const [isDragging, setIsDragging] = useState(false);
+  const [_isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
 
   const [showEvidencePopup, setShowEvidencePopup] = useState(false);

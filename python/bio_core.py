@@ -37,8 +37,10 @@ try:
         check_gsea_available
     )
     GSEA_AVAILABLE = check_gsea_available()
-except ImportError:
+    logging.info(f"[INIT] GSEA module imported, available={GSEA_AVAILABLE}")
+except ImportError as e:
     GSEA_AVAILABLE = False
+    logging.warning(f"[INIT] GSEA module not available: {e}")
     print("[BioEngine] GSEA module not available", file=sys.stderr)
 
 try:
@@ -49,8 +51,10 @@ try:
         check_image_available
     )
     IMAGE_AVAILABLE = check_image_available()
-except ImportError:
+    logging.info(f"[INIT] Image module imported, available={IMAGE_AVAILABLE}")
+except ImportError as e:
     IMAGE_AVAILABLE = False
+    logging.warning(f"[INIT] Image module not available: {e}")
     print("[BioEngine] Image module not available", file=sys.stderr)
 
 try:
@@ -59,8 +63,10 @@ try:
         handle_get_sample_groups
     )
     MULTI_SAMPLE_AVAILABLE = True
-except ImportError:
+    logging.info("[INIT] Multi-sample module imported successfully")
+except ImportError as e:
     MULTI_SAMPLE_AVAILABLE = False
+    logging.warning(f"[INIT] Multi-sample module not available: {e}")
     print("[BioEngine] Multi-sample module not available", file=sys.stderr)
 
 # Configure logging
@@ -1300,6 +1306,8 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         CURRENT_REQUEST_ID = str(request_id) if request_id is not None else None
         CURRENT_CMD = cmd or None
 
+        logging.info(f"[CMD] Processing command: {cmd} (request_id={request_id})")
+
         # Handlers that return a dict (old style)
         return_handlers = {
             "HEARTBEAT": handle_heartbeat,
@@ -1321,17 +1329,26 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             return_handlers["ENRICHR"] = handle_run_enrichr
             return_handlers["GSEA"] = handle_run_gsea
             return_handlers["GET_GENE_SETS"] = handle_get_gene_sets
+            logging.debug("GSEA handlers available")
+        else:
+            logging.warning("GSEA handlers NOT available")
         
         # V2.0: Add Image handlers if available
         if IMAGE_AVAILABLE:
             return_handlers["UPLOAD_IMAGE"] = handle_upload_image
             return_handlers["ANALYZE_IMAGE"] = handle_analyze_image
             return_handlers["LIST_IMAGES"] = handle_list_images
+            logging.debug("Image handlers available")
+        else:
+            logging.warning("Image handlers NOT available")
         
         # V2.0: Add Multi-sample handlers if available
         if MULTI_SAMPLE_AVAILABLE:
             return_handlers["LOAD_MULTI_SAMPLE"] = handle_load_multi_sample
             return_handlers["GET_SAMPLE_GROUPS"] = handle_get_sample_groups
+            logging.debug("Multi-sample handlers available")
+        else:
+            logging.warning("Multi-sample handlers NOT available")
 
         # Handlers that send response directly (new style)
         direct_send_handlers = {
@@ -1342,19 +1359,26 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         }
         
         if cmd in return_handlers:
+            logging.info(f"[CMD] Calling handler for: {cmd}")
             response = return_handlers[cmd](payload)
+            logging.info(f"[CMD] Handler completed: {cmd}, status={response.get('status', 'unknown')}")
             send_response(response)
         elif cmd in direct_send_handlers:
+            logging.info(f"[CMD] Calling direct handler for: {cmd}")
             direct_send_handlers[cmd](payload)
+            logging.info(f"[CMD] Direct handler completed: {cmd}")
         else:
+            logging.error(f"[CMD] Unknown command: {cmd}")
             send_error(
                 f"Unknown command: {cmd}",
                 details={"available_commands": list(return_handlers.keys()) + list(direct_send_handlers.keys())}
             )
             
     except json.JSONDecodeError as e:
+        logging.error(f"[CMD] Invalid JSON: {e}")
         send_error(f"Invalid JSON: {str(e)}")
     except Exception as e:
+        logging.exception(f"[CMD] System error: {e}")
         send_error(f"System error: {str(e)}", details={"traceback": traceback.format_exc()})
     finally:
         # Always clear context after handling one command to avoid leaking into later responses.
