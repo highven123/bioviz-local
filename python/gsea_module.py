@@ -5,6 +5,7 @@ Provides local gene set enrichment analysis capabilities.
 
 import sys
 import json
+import logging
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
@@ -12,9 +13,11 @@ from pathlib import Path
 try:
     import gseapy as gp
     GSEAPY_AVAILABLE = True
-except ImportError:
+    logging.info(f"[GSEA] gseapy version {gp.__version__} loaded successfully")
+except ImportError as e:
     GSEAPY_AVAILABLE = False
-    print("[GSEA] Warning: gseapy not installed. GSEA features disabled.", file=sys.stderr)
+    logging.warning(f"[GSEA] gseapy import failed: {e}")
+    print(f"[GSEA] Warning: gseapy not installed or import failed: {e}", file=sys.stderr)
 
 
 def check_gsea_available() -> bool:
