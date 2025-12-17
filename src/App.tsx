@@ -95,10 +95,10 @@ function App() {
   // Panel visibility states for collapsible layout
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showCenterPanel, setShowCenterPanel] = useState(true);
-  const [showRightPanel, setShowRightPanel] = useState(false); // Default collapsed
+  const [showRightPanel, setShowRightPanel] = useState(true); // Default: all panels open
 
-  // Draggable toolbar position (default: top-left)
-  const [toolbarPos, setToolbarPos] = useState({ x: 20, y: 120 });
+  // Draggable toolbar position (default: top-right of pathway view, accounting for left panel)
+  const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth * 0.65, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
 
@@ -1047,32 +1047,32 @@ function App() {
           style={{
             position: 'fixed',
             left: toolbarPos.x,
-            top: toolbarPos.y,
+            top: toolbarPos.y, // Use top instead of bottom
             display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-            zIndex: 100,
+            flexDirection: 'row', // Horizontal!
+            gap: '8px',
             background: 'rgba(11, 14, 20, 0.95)',
             padding: '8px',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '24px', // Capsule shape
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            zIndex: 999,
             backdropFilter: 'blur(10px)',
-            cursor: isDragging ? 'grabbing' : 'default',
-            userSelect: 'none'
+            userSelect: 'none', // Prevent text selection
+            WebkitUserSelect: 'none'
           }}
         >
           {/* Drag Handle */}
           <div
             style={{
-              width: '100%',
-              height: '16px',
+              width: '24px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'grab',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
-              marginBottom: '4px',
-              paddingBottom: '6px'
+              cursor: 'move', // Drag cursor
+              paddingRight: '6px',
+              borderRight: '1px solid rgba(255,255,255,0.1)',
+              marginRight: '2px'
             }}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -1084,8 +1084,8 @@ function App() {
 
               const handleMouseMove = (e: MouseEvent) => {
                 setToolbarPos({
-                  x: Math.max(0, Math.min(window.innerWidth - 60, e.clientX - dragOffset.current.x)),
-                  y: Math.max(0, Math.min(window.innerHeight - 180, e.clientY - dragOffset.current.y))
+                  x: Math.max(10, Math.min(window.innerWidth - 210, e.clientX - dragOffset.current.x)),
+                  y: Math.max(10, Math.min(window.innerHeight - 90, e.clientY - dragOffset.current.y))
                 });
               };
 

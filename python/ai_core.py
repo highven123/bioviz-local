@@ -14,7 +14,7 @@ try:
     from dotenv import load_dotenv
     # Load from project root .env file
     env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
     print(f"[AI Core] Loaded environment from: {env_path}", file=sys.stderr)
 except ImportError:
     print("[AI Core] Warning: python-dotenv not installed. Environment variables must be set manually.", file=sys.stderr)
@@ -57,18 +57,28 @@ def get_ai_client() -> OpenAI:
     Initialize AI client based on environment configuration.
     """
     provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    print(f"[AI Core] Initializing AI Client. Provider: {provider}", file=sys.stderr)
     
     if provider == "bailian":
-        # Alibaba Cloud Bailian DeepSeek API
         # Support both DASHSCOPE_API_KEY (official) and DEEPSEEK_API_KEY (our convention)
-        api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+        # Prioritize DEEPSEEK_API_KEY as it is explicitly set in our .env
+        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+        
+        # Debug: Print masked key
+        if api_key:
+            masked_key = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else "***"
+            print(f"[AI Core] Using API Key: {masked_key}", file=sys.stderr)
+        else:
+            print("[AI Core] No API Key found for bailian!", file=sys.stderr)
+
         if not api_key:
             print("[AI Core] Warning: DASHSCOPE_API_KEY or DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
             api_key = "sk-placeholder"
         
         return OpenAI(
             api_key=api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            timeout=120.0  # 增加超时时间到 120 秒
         )
     
     elif provider == "deepseek":

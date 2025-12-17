@@ -1,8 +1,12 @@
 .ai-event-panel {
     position: fixed;
-    bottom: 20px;
     right: 20px;
-    width: 360px;
+    top: 50%;
+    /* Middle of screen */
+    transform: translateY(-50%);
+    /* Center vertically */
+    width: 200px;
+    /* Compact width for 2-column layout */
     max-height: 400px;
     background: rgba(15, 23, 42, 0.98);
     border: 1px solid rgba(139, 92, 246, 0.3);
@@ -15,7 +19,21 @@
 }
 
 .ai-event-panel.minimized {
-    max-height: 48px;
+    width: 56px;
+    /* Just icon size */
+    max-height: 56px;
+    border-radius: 28px;
+    /* Circle */
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.9), rgba(59, 130, 246, 0.9));
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    cursor: move;
+    /* Show drag cursor */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    /* Prevent text selection */
+    -webkit-user-select: none;
 }
 
 .ai-event-header {
@@ -26,6 +44,17 @@
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2));
     border-bottom: 1px solid rgba(139, 92, 246, 0.2);
     cursor: pointer;
+}
+
+/* Hide header when minimized, show only icon */
+.ai-event-panel.minimized .ai-event-header {
+    display: none;
+}
+
+/* Show robot icon when minimized */
+.ai-event-panel.minimized::before {
+    content: '🤖';
+    font-size: 32px;
 }
 
 .ai-badge {
@@ -187,7 +216,8 @@
 
 .skills-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+    /* 2 columns */
     gap: 6px;
 }
 

@@ -442,6 +442,7 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                     data: graphNodes.map(n => ({ ...n, fixed: true })), // Ensure everything is fixed
                     links: graphLinks,
                     roam: true, // Keep zoom/pan, but nodes shouldn't move relative to each other
+                    scaleLimit: { min: 0.5, max: 4 }, // Limit zoom: 0.5x to 4x
                     draggable: false, // Prevent dragging nodes
                     animation: false, // Disable all animations to prevent "flying" effect
                     lineStyle: {

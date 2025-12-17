@@ -1,93 +1,119 @@
-# BioViz Local (生物通路可视化分析系统)
+# BioViz Local (Biological Pathway Visualization & Analysis)
 
-BioViz Local 是一个**本地优先**、保护隐私的生物通路分析与可视化工具。它结合了现代 Web 技术 (React + Tauri) 与强大的 Python 分析引擎，通过本地 AI 智能体辅助，为您提供直观、深入的基因/蛋白质组学数据分析体验。
+BioViz Local is a **local-first**, privacy-focused biological pathway analysis and visualization tool. It combines modern web technologies (React + Tauri) with a powerful Python analysis engine, assisted by local AI agents, to provide an intuitive and in-depth gene/protein omics data analysis experience.
 
 ![BioViz Screenshot](https://raw.githubusercontent.com/highven123/BioViz-Local/main/screenshots/demo.png)
 
-## ✨ 核心特性
+## ✨ Core Features
 
-*   **🔒 本地优先与隐私保护**：所有数据处理均在您本地计算机上完成，无需上传敏感的基因表达数据到云端服务器。
-*   **🧬 交互式 KEGG 通路分析**：支持 KEGG 通路的高级渲染，能够将您的基因/蛋白质 log2 fold change 表达数据直接映射到通路图上，自动匹配节点颜色。
-*   **🤖 上下文感知 AI 助手**：
-    *   **Logic Lock 安全架构**：AI 操作严格受限，只有在用户授权后才能执行敏感操作。
-    *   **深度分析**：AI 可以感知当前查看的通路和数据，提供基于真实数据的生物学洞察（如"分析糖酵解通路的表达模式"）。
-    *   **工具调用**：AI 可自动执行数据查询、通路切换和统计分析。
-*   **📊 多维度数据展示**：集成火山图 (Volcano Plot)、统计摘要面板和详细的数据表格。
-*   **📝 报告导出**：支持导出高质量的 SVG/PNG 图片以及可编辑的 PPTX 演示文稿，方便学术发表。
+*   **🔒 Local-First & Privacy Protection**: All data processing is done on your local computer, with no need to upload sensitive gene expression data to cloud servers.
+*   **🧬 Interactive KEGG Pathway Analysis**: 
+    - Advanced rendering of KEGG pathways with zoom limits (0.5x-4x)
+    - Direct mapping of gene/protein log2 fold change expression data onto pathway diagrams
+    - Automatic node color matching based on expression levels
+*   **🤖 Context-Aware AI Assistant**:
+    - **Compact floating panel** with 2-column skill grid layout (English UI)
+    - Draggable robot icon positioned on the right side
+    - **Logic Lock security architecture**: AI operations are strictly limited and only execute with user authorization
+    - **Deep analysis**: AI understands current pathway and data context, providing real biological insights
+    - **Tool invocation**: Automated data queries, pathway switching, and statistical analysis
+*   **📊 Multi-Dimensional Data Display**: Integrated Volcano Plot, statistics summary panels, and detailed data tables
+*   **📝 Report Export**: Export high-quality SVG/PNG images and editable PPTX presentations for academic publication
+*   **🎨 Modern UI/UX**:
+    - Horizontal floating toolbar for view switching (Stats/Pathway/AI Chat)
+    - Draggable control panel positioned in top-right of pathway area
+    - All panels open by default for immediate access
 
-## 🛠️ 技术栈
+## 🛠️ Tech Stack
 
-*   **Frontend**: React, TypeScript, Vite, TailwindCSS
+*   **Frontend**: React, TypeScript, Vite, CSS (custom design)
 *   **Backend (App)**: Tauri (Rust)
 *   **Analysis Engine**: Python 3.11+, Pandas, NetworkX, BioPython
-*   **AI Engine**: 集成 DeepSeek, OpenAI 或本地 Ollama 模型
+*   **Visualization**: ECharts with custom pathway rendering
+*   **AI Engine**: Integrated DeepSeek, OpenAI, or local Ollama models
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 前置要求
+### Prerequisites
 
-确保您的系统已安装：
+Ensure your system has:
 *   [Node.js](https://nodejs.org/) (v16+)
-*   [Rust & Cargo](https://rustup.rs/) (用于构建桌面应用)
-*   [Python 3.11+](https://www.python.org/) (用于分析引擎)
+*   [Rust & Cargo](https://rustup.rs/) (for building desktop app)
+*   [Python 3.11+](https://www.python.org/) (for analysis engine)
 
-### 安装步骤
+### Installation Steps
 
-1.  **克隆仓库**
+1.  **Clone repository**
     ```bash
     git clone https://github.com/highven123/BioViz-Local.git
     cd BioViz-Local
     ```
 
-2.  **安装前端依赖**
+2.  **Install frontend dependencies**
     ```bash
     npm install
     ```
 
-3.  **设置 Python 环境**
-    建议使用虚拟环境：
+3.  **Set up Python environment**
+    Recommended using virtual environment:
     ```bash
     python3 -m venv venv
     source venv/bin/activate  # Windows: venv\Scripts\activate
     pip install -r python/requirements.txt
     ```
 
-### 运行开发版
+### Run Development Version
 
 ```bash
 npm run tauri dev
 ```
-此命令将同时启动前端开发服务器和 Tauri 窗口。
+This command will start both the frontend dev server and Tauri window.
 
-## 🤖 AI 配置
+## 🤖 AI Configuration
 
-BioViz Local 支持多种 AI 模型。请在项目根目录创建 `.env` 文件或使用提供的 `setup-ai-env.sh` 脚本进行配置。
+BioViz Local supports multiple AI models. Create a `.env` file in the project root or use the provided `setup-ai-env.sh` script for configuration.
 
-参考模板 (`.env.example`)：
+Reference template (`.env.example`):
 ```ini
-# 选择 AI 提供商: deepseek, openai, 或 ollama
+# Choose AI provider: deepseek, openai, bailian, or ollama
 AI_PROVIDER=deepseek
 
-# API 密钥 (本地 Ollama 不需要)
+# API Key (not needed for local Ollama)
 DEEPSEEK_API_KEY=your_api_key_here
 
-# 模型名称
-DEEPSEEK_MODEL=deepseek-chat
+# Model name
+DEEPSEEK_MODEL=deepseek-v3.2-exp
 ```
 
-## 📖 使用指南
+## 📖 User Guide
 
-1.  **导入数据**：点击主页面的 "Import Data"，上传包含基因/蛋白质表达数据的 CSV/Excel 文件。
-2.  **映射列名**：系统会自动尝试识别 Gene Name, Log2FC 和 P-value 列，您可以手动校正。
-3.  **选择通路**：在左侧列表选择感兴趣的 KEGG 通路（如 "Glycolysis / Gluconeogenesis"）。
-4.  **AI 交互**：点击右侧 "AI Chat"，尝试提问：
-    *   "分析当前通路的表达情况"
-    *   "为什么 PFKM 下调？"
-    *   "导出这份分析报告"
+1.  **Import Data**: Click "Import Data" on the main page, upload CSV/Excel file containing gene/protein expression data.
+2.  **Map Columns**: System will automatically attempt to identify Gene Name, Log2FC, and P-value columns - you can manually correct.
+3.  **Select Pathway**: Choose interested KEGG pathway from the left panel (e.g., "Glycolysis / Gluconeogenesis").
+4.  **Pathway Visualization**:
+    - Zoom limits: 0.5x (minimum) to 4x (maximum)
+    - Use floating toolbar to reset view, export PNG/SVG/PPTX, or save data
+5.  **AI Interaction**: Click the 🤖 robot icon on the right, try asking:
+    - "Analyze current pathway expression patterns"
+    - "Why is PFKM downregulated?"
+    - "Run GSEA analysis"
+    - "Compare upregulated vs downregulated genes"
 
-## 📄 许可证
+## 🎨 UI Features
+
+*   **Floating View Toolbar**: Draggable horizontal bar with 3 buttons (📊 Stats, 🗺️ Pathway, 🤖 AI Chat)
+    - Default position: Top-right of pathway area
+    - Fully draggable across entire window
+*   **AI Assistant Panel**: 
+    - Minimized: Single 🤖 robot icon
+    - Expanded: Compact 200px panel with 2-column skill grid
+    - 6 quick skills: GSEA, Enrichment, Report, Compare, Trends, Research
+    - Draggable anywhere on screen with boundary detection
+    - All text in English
+
+## 📄 License
 
 MIT License
 
 ---
-*BioViz Local - 让生物信息学分析更简单、更安全、更智能。*
+*BioViz Local - Making bioinformatics analysis simpler, safer, and smarter.*
