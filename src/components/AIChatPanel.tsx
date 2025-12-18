@@ -72,8 +72,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         lines.forEach((line, idx) => {
             const trimmed = line.trim();
 
-            // Check for bullet list items (-, *, •)
-            const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/);
+            // Check for bullet list items (- or *)
+            const bulletMatch = trimmed.match(/^[-*]\s+(.+)/);
             // Check for numbered list items (1., 2., etc.)
             const numMatch = trimmed.match(/^\d+[.)]\s+(.+)/);
             // Check for bold headers (**text**)

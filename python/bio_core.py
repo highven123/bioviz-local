@@ -1468,7 +1468,8 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         if cmd in return_handlers:
             logging.info(f"[CMD] Calling handler for: {cmd}")
             result = return_handlers[cmd](payload)
-            _send_success(result, request_id)
+            logging.info(f"[CMD] Handler completed: {cmd}, status={result.get('status', 'unknown')}")
+            send_response(result)
         elif cmd in direct_send_handlers:
             logging.info(f"[CMD] Calling direct handler for: {cmd}")
             direct_send_handlers[cmd](payload)
