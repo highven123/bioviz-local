@@ -1447,6 +1447,14 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             logging.debug("Multi-sample handlers available")
         else:
             logging.warning("Multi-sample handlers NOT available")
+        
+        # V2.0: Add DE Analysis handler
+        try:
+            from de_analysis import handle_de_analysis
+            return_handlers["DE_ANALYSIS"] = handle_de_analysis
+            logging.debug("DE Analysis handler registered")
+        except ImportError as e:
+            logging.warning(f"DE Analysis handler NOT available: {e}")
 
         # Handlers that send response directly (new style)
         direct_send_handlers = {
@@ -1456,11 +1464,11 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "SAVE_DATA": handle_save_data,
         }
         
+        # Check both handler dicts
         if cmd in return_handlers:
             logging.info(f"[CMD] Calling handler for: {cmd}")
-            response = return_handlers[cmd](payload)
-            logging.info(f"[CMD] Handler completed: {cmd}, status={response.get('status', 'unknown')}")
-            send_response(response)
+            result = return_handlers[cmd](payload)
+            _send_success(result, request_id)
         elif cmd in direct_send_handlers:
             logging.info(f"[CMD] Calling direct handler for: {cmd}")
             direct_send_handlers[cmd](payload)
