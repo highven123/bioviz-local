@@ -62,9 +62,9 @@ def simple_ttest_de(
         if np.all(g1_values == 0) and np.all(g2_values == 0):
             continue
         
-        # Add pseudocount to avoid log(0)
-        g1_values = g1_values + 1
-        g2_values = g2_values + 1
+        # Add pseudocount and ensure positive for log2
+        g1_values = np.maximum(g1_values, 0) + 1
+        g2_values = np.maximum(g2_values, 0) + 1
         
         # Log2 transform
         log2_g1 = np.log2(g1_values)
@@ -103,9 +103,15 @@ def simple_ttest_de(
         return pd.DataFrame(columns=['gene', 'log2FC', 'pvalue', 'FDR', 'status'])
     
     # FDR correction (Benjamini-Hochberg)
-    from statsmodels.stats.multitest import multipletests
-    _, fdr_values, _, _ = multipletests(df['pvalue'], method='fdr_bh')
-    df['FDR'] = fdr_values
+    df['FDR'] = df['pvalue'] # Default to pvalue if correction fails
+    try:
+        from statsmodels.stats.multitest import multipletests
+        _, fdr_values, _, _ = multipletests(df['pvalue'], method='fdr_bh')
+        df['FDR'] = fdr_values
+    except ImportError:
+        logging.warning("statsmodels not available, skipping BH FDR correction.")
+    except Exception as e:
+        logging.error(f"FDR correction failed: {e}")
     
     # Determine status
     def classify_gene(row):
@@ -258,15 +264,19 @@ def auto_de_analysis(
             contrast=("condition", "group2", "group1")
         )
         
+        # Replace NaN/inf with None for JSON serialization
+        results_df = results_df.replace([np.inf, -np.inf], np.nan)
+        results_list = results_df.where(pd.notnull(results_df), None).to_dict('records')
+        
         return {
             "status": "ok",
             "method": "DESeq2",
-            "results": results_df.to_dict('records'),
+            "results": results_list,
             "summary": {
-                "total_genes": len(results_df),
-                "up_regulated": (results_df['status'] == 'UP').sum(),
-                "down_regulated": (results_df['status'] == 'DOWN').sum(),
-                "not_significant": (results_df['status'] == 'NS').sum()
+                "total_genes": int(len(results_df)),
+                "upregulated": int((results_df['status'] == 'UP').sum()),
+                "downregulated": int((results_df['status'] == 'DOWN').sum()),
+                "not_significant": int((results_df['status'] == 'NS').sum())
             },
             "warning": None
         }
@@ -274,15 +284,19 @@ def auto_de_analysis(
     elif method == "ttest":
         results_df = simple_ttest_de(counts, group1_samples, group2_samples, **kwargs)
         
+        # Replace NaN/inf with None for JSON serialization
+        results_df = results_df.replace([np.inf, -np.inf], np.nan)
+        results_list = results_df.where(pd.notnull(results_df), None).to_dict('records')
+        
         return {
             "status": "ok",
             "method": "Simple t-test",
-            "results": results_df.to_dict('records'),
+            "results": results_list,
             "summary": {
-                "total_genes": len(results_df),
-                "up_regulated": (results_df['status'] == 'UP').sum(),
-                "down_regulated": (results_df['status'] == 'DOWN').sum(),
-                "not_significant": (results_df['status'] == 'NS').sum()
+                "total_genes": int(len(results_df)),
+                "upregulated": int((results_df['status'] == 'UP').sum()),
+                "downregulated": int((results_df['status'] == 'DOWN').sum()),
+                "not_significant": int((results_df['status'] == 'NS').sum())
             },
             "warning": "Simple t-test used. For publication, use DESeq2 or edgeR in R."
         }
@@ -308,19 +322,41 @@ def handle_de_analysis(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Extract data
         counts_data = payload.get("counts")
+        counts_path = payload.get("counts_path")
         group1_samples = payload.get("group1_samples", [])
         group2_samples = payload.get("group2_samples", [])
         method = payload.get("method", "auto")
         
-        # Convert counts to DataFrame if needed
-        if isinstance(counts_data, dict):
-            counts = pd.DataFrame(counts_data)
-        elif isinstance(counts_data, pd.DataFrame):
-            counts = counts_data
-        else:
+        # Determine counts DataFrame
+        counts = None
+        if counts_data is not None:
+            if isinstance(counts_data, dict):
+                counts = pd.DataFrame(counts_data)
+                if 'gene' in counts.columns:
+                    counts = counts.set_index('gene')
+            elif isinstance(counts_data, pd.DataFrame):
+                counts = counts_data
+        elif counts_path:
+            import os
+            if not os.path.exists(counts_path):
+                return {"status": "error", "message": f"File not found: {counts_path}"}
+            
+            if counts_path.endswith('.csv'):
+                counts = pd.read_csv(counts_path)
+            elif counts_path.endswith(('.xls', '.xlsx')):
+                counts = pd.read_excel(counts_path)
+            else:
+                return {"status": "error", "message": "Unsupported file format. Use CSV or Excel."}
+            
+            # Use first column as gene index if not already
+            if not counts.empty:
+                gene_col = counts.columns[0]
+                counts = counts.set_index(gene_col)
+        
+        if counts is None or counts.empty:
             return {
                 "status": "error",
-                "message": "Invalid counts format. Expected dict or DataFrame."
+                "message": "Invalid counts format or empty data. Expected 'counts' (dict) or 'counts_path' (string)."
             }
         
         # Run analysis

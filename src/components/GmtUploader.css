@@ -1,0 +1,138 @@
+.gmt-uploader {
+    margin-top: 12px;
+}
+
+.gmt-drop-zone {
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 100px;
+    background: rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.gmt-drop-zone:hover {
+    border-color: rgba(59, 130, 246, 0.5);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.gmt-drop-zone.dragging {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.2);
+    transform: scale(1.02);
+}
+
+.gmt-drop-zone.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gmt-icon {
+    font-size: 24px;
+}
+
+.gmt-text {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+}
+
+.gmt-browse-btn {
+    padding: 6px 16px;
+    background: rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 6px;
+    color: #3b82f6;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.gmt-browse-btn:hover {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: #3b82f6;
+}
+
+.gmt-browse-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gmt-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.gmt-loading .spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.gmt-loaded {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.gmt-info {
+    flex: 1;
+}
+
+.gmt-filename {
+    font-weight: 500;
+    color: #10b981;
+    font-size: 14px;
+}
+
+.gmt-stats {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 2px;
+}
+
+.gmt-clear-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.gmt-clear-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    transform: scale(1.1);
+}
+
+.gmt-error {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #ef4444;
+    font-size: 13px;
+}

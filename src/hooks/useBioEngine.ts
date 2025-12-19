@@ -181,13 +181,22 @@ export function useBioEngine(): UseBioEngineReturn {
             // Listen for stderr from sidecar
             unlistenError = await listen<string>('sidecar-error', (event) => {
                 const payload = event.payload ?? '';
-                // Treat debug/info lines as console logs, not fatal errors
-                if (typeof payload === 'string' && (payload.startsWith('[DEBUG]') || payload.startsWith('[BioEngine]'))) {
-                    console.log('[BioViz] Sidecar stderr:', payload);
-                    return;
+                const text = typeof payload === 'string' ? payload.trim() : '';
+
+                // Treat log-level lines as console logs, not fatal errors
+                if (text) {
+                    if (/\[(DEBUG|INFO)\]/.test(text) || text.startsWith('[BioEngine]')) {
+                        console.log('[BioViz] Sidecar log:', text);
+                        return;
+                    }
+                    if (/\[WARNING\]/.test(text)) {
+                        console.warn('[BioViz] Sidecar warning:', text);
+                        return;
+                    }
                 }
+
                 console.error('[BioViz] Sidecar error:', payload);
-                setError(typeof payload === 'string' ? payload : String(payload));
+                setError(text || (typeof payload === 'string' ? payload : String(payload)));
             });
 
             // Listen for termination

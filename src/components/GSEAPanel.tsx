@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './GSEAPanel.css';
+import { open, save } from '@tauri-apps/plugin-dialog';
+
 
 interface EnrichedTerm {
     term: string;
@@ -19,10 +21,12 @@ interface GSEAResult {
 }
 
 interface GSEAPanelProps {
-    sendCommand: (cmd: string, data?: Record<string, unknown>) => Promise<void>;
+    sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<any>;
     volcanoData?: Array<{ gene: string; x: number; y: number; status: string }>;
     isConnected: boolean;
-    lastResponse?: any;  // Add this to receive backend responses
+    lastResponse?: any;
+    onEnrichmentResult?: (results: EnrichedTerm[]) => void;
+    onGseaResult?: (up: GSEAResult[], down: GSEAResult[]) => void;
 }
 
 type AnalysisMode = 'enrichr' | 'gsea';
@@ -42,14 +46,19 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     volcanoData,
     isConnected,
     lastResponse,
+    onEnrichmentResult,
+    onGseaResult,
 }) => {
+
     const [mode, setMode] = useState<AnalysisMode>('enrichr');
     const [selectedGeneSet, setSelectedGeneSet] = useState('KEGG_2021_Human');
+    const [availableGeneSets, setAvailableGeneSets] = useState(GENE_SET_OPTIONS);
     const [isLoading, setIsLoading] = useState(false);
+
     const [enrichrResults, setEnrichrResults] = useState<EnrichedTerm[]>([]);
     const [gseaUp, setGseaUp] = useState<GSEAResult[]>([]);
     const [gseaDown, setGseaDown] = useState<GSEAResult[]>([]);
-    const [error, setError] = useState<string | null>(null);
+    const [feedback, setFeedback] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
     // Handle responses from backend
     useEffect(() => {
@@ -59,9 +68,14 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
             setIsLoading(false);
             if (lastResponse.status === 'ok' && lastResponse.enriched_terms) {
                 setEnrichrResults(lastResponse.enriched_terms);
-                setError(null);
+                if (lastResponse.warnings && lastResponse.warnings.length > 0) {
+                    setFeedback({ type: 'warning', message: `Analysis complete with warnings: ${lastResponse.warnings.join(', ')}` });
+                } else {
+                    setFeedback({ type: 'success', message: 'Enrichment analysis completed successfully.' });
+                }
+                if (onEnrichmentResult) onEnrichmentResult(lastResponse.enriched_terms);
             } else if (lastResponse.status === 'error') {
-                setError(lastResponse.message || 'Enrichr analysis failed');
+                setFeedback({ type: 'error', message: lastResponse.message || 'Enrichr analysis failed' });
             }
         }
 
@@ -70,12 +84,38 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
             if (lastResponse.status === 'ok') {
                 setGseaUp(lastResponse.up_regulated || []);
                 setGseaDown(lastResponse.down_regulated || []);
-                setError(null);
+                if (lastResponse.warnings && lastResponse.warnings.length > 0) {
+                    setFeedback({ type: 'warning', message: `GSEA complete with warnings: ${lastResponse.warnings.join(', ')}` });
+                } else {
+                    setFeedback({ type: 'success', message: 'GSEA analysis completed successfully.' });
+                }
+                if (onGseaResult) onGseaResult(lastResponse.up_regulated || [], lastResponse.down_regulated || []);
             } else if (lastResponse.status === 'error') {
-                setError(lastResponse.message || 'GSEA analysis failed');
+                setFeedback({ type: 'error', message: lastResponse.message || 'GSEA analysis failed' });
+            }
+        }
+
+        if (lastResponse.cmd === 'LOAD_GMT') {
+            setIsLoading(false);
+            if (lastResponse.status === 'ok') {
+                const newGeneSet = {
+                    id: lastResponse.path,
+                    name: `📁 ${lastResponse.path.split('/').pop()}`,
+                    category: 'local'
+                };
+                setAvailableGeneSets(prev => [newGeneSet, ...prev]);
+                setSelectedGeneSet(lastResponse.path);
+
+                const stats = lastResponse.stats;
+                const warnings = lastResponse.warnings || [];
+                const msg = `Loaded GMT: ${stats.total_sets} sets, ${stats.unique_genes} genes. ${warnings.length > 0 ? '\nWarnings: ' + warnings.join('; ') : ''}`;
+                setFeedback({ type: warnings.length > 0 ? 'warning' : 'success', message: msg });
+            } else {
+                setFeedback({ type: 'error', message: `Failed to load GMT: ${lastResponse.message}` });
             }
         }
     }, [lastResponse]);
+
 
     // Extract gene lists from volcano data
     const getSignificantGenes = () => {
@@ -103,12 +143,12 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     const runEnrichr = async () => {
         const genes = getSignificantGenes();
         if (genes.length === 0) {
-            setError('No significant genes found. Load data first.');
+            setFeedback({ type: 'warning', message: 'No significant genes found. Load data first.' });
             return;
         }
 
         setIsLoading(true);
-        setError(null);
+        setFeedback(null);
 
         try {
             await sendCommand('ENRICHR', {
@@ -116,7 +156,7 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
                 gene_sets: selectedGeneSet,
             });
         } catch (err) {
-            setError(`Enrichr analysis failed: ${err}`);
+            setFeedback({ type: 'error', message: `Enrichr analysis failed: ${err}` });
         } finally {
             setIsLoading(false);
         }
@@ -125,12 +165,12 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
     const runGSEA = async () => {
         const ranking = getGeneRanking();
         if (Object.keys(ranking).length === 0) {
-            setError('⚠️ 未找到基因数据。\n\n请先完成以下步骤：\n1. 上传差异表达数据\n2. 设置列映射\n3. 选择通路并运行分析\n4. 分析完成后再使用 GSEA');
+            setFeedback({ type: 'warning', message: '⚠️ 未找到基因数据。请先加载分析数据。' });
             return;
         }
 
         setIsLoading(true);
-        setError(null);
+        setFeedback(null);
 
         try {
             await sendCommand('GSEA', {
@@ -138,7 +178,7 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
                 gene_sets: selectedGeneSet,
             });
         } catch (err) {
-            setError(`GSEA analysis failed: ${err}`);
+            setFeedback({ type: 'error', message: `GSEA analysis failed: ${err}` });
         } finally {
             setIsLoading(false);
         }
@@ -151,6 +191,46 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
             runGSEA();
         }
     };
+
+    const handleLoadLocalGMT = async () => {
+        try {
+            const selected = await open({
+                filters: [{ name: 'GMT Files', extensions: ['gmt'] }],
+                multiple: false,
+            });
+
+            if (selected && typeof selected === 'string') {
+                setIsLoading(true);
+                setFeedback(null);
+                await sendCommand('LOAD_GMT', { path: selected });
+            }
+        } catch (err) {
+            setFeedback({ type: 'error', message: `Error opening file: ${err}` });
+        }
+    };
+
+    const handleExportCSV = async (type: 'enrichr' | 'gsea') => {
+        try {
+            const defaultName = type === 'enrichr' ? 'enrichment_results.csv' : 'gsea_results.csv';
+            const savePath = await save({
+                defaultPath: defaultName,
+                filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+            });
+
+            if (savePath) {
+                const results = type === 'enrichr' ? { enriched_terms: enrichrResults } : { up_regulated: gseaUp, down_regulated: gseaDown };
+                await sendCommand('EXPORT_CSV', {
+                    results,
+                    output_path: savePath,
+                    type
+                });
+                alert(`✅ Results exported to ${savePath}`);
+            }
+        } catch (err) {
+            setFeedback({ type: 'error', message: `Export failed: ${err}` });
+        }
+    };
+
 
     return (
         <div className="gsea-panel">
@@ -175,17 +255,27 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
             <div className="gsea-controls">
                 <label>
                     Gene Set:
-                    <select
-                        value={selectedGeneSet}
-                        onChange={(e) => setSelectedGeneSet(e.target.value)}
-                    >
-                        {GENE_SET_OPTIONS.map((gs) => (
-                            <option key={gs.id} value={gs.id}>
-                                {gs.name}
-                            </option>
-                        ))}
-                    </select>
+                    <div className="gene-set-selector-group">
+                        <select
+                            value={selectedGeneSet}
+                            onChange={(e) => setSelectedGeneSet(e.target.value)}
+                        >
+                            {availableGeneSets.map((gs) => (
+                                <option key={gs.id} value={gs.id}>
+                                    {gs.name}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            className="load-gmt-btn"
+                            onClick={handleLoadLocalGMT}
+                            title="Load local .gmt file"
+                        >
+                            📂
+                        </button>
+                    </div>
                 </label>
+
 
                 <button
                     className="gsea-run-btn"
@@ -196,7 +286,15 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
                 </button>
             </div>
 
-            {error && <div className="gsea-error">{error}</div>}
+            {feedback && (
+                <div className={`gsea-feedback ${feedback.type}`}>
+                    {feedback.type === 'success' && <span className="feedback-icon">✅</span>}
+                    {feedback.type === 'warning' && <span className="feedback-icon">⚠️</span>}
+                    {feedback.type === 'error' && <span className="feedback-icon">❌</span>}
+                    <div className="feedback-message">{feedback.message}</div>
+                    <button className="feedback-close" onClick={() => setFeedback(null)}>×</button>
+                </div>
+            )}
 
             <div className="gsea-info">
                 <span>📊 {volcanoData?.length || 0} genes loaded</span>
@@ -207,9 +305,15 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
             {/* Results Section */}
             {enrichrResults.length > 0 && mode === 'enrichr' && (
                 <div className="gsea-results">
-                    <h4>Top Enriched Terms</h4>
+                    <div className="results-header">
+                        <h4>Top Enriched Terms</h4>
+                        <button className="export-btn" onClick={() => handleExportCSV('enrichr')}>
+                            📥 Export CSV
+                        </button>
+                    </div>
+
                     <ul className="enrichr-list">
-                        {enrichrResults.slice(0, 10).map((term, idx) => (
+                        {enrichrResults.slice(0, 10).map((term: EnrichedTerm, idx: number) => (
                             <li key={idx} className="enrichr-item">
                                 <span className="term-name">{term.term}</span>
                                 <span className="term-pvalue">
@@ -223,27 +327,36 @@ export const GSEAPanel: React.FC<GSEAPanelProps> = ({
 
             {(gseaUp.length > 0 || gseaDown.length > 0) && mode === 'gsea' && (
                 <div className="gsea-results">
-                    <div className="gsea-column">
-                        <h4>🔺 Upregulated Pathways</h4>
-                        <ul className="gsea-list up">
-                            {gseaUp.slice(0, 5).map((term, idx) => (
-                                <li key={idx}>
-                                    <span>{term.term}</span>
-                                    <span>NES: {term.nes.toFixed(2)}</span>
-                                </li>
-                            ))}
-                        </ul>
+                    <div className="results-header">
+                        <h4>GSEA Results</h4>
+                        <button className="export-btn" onClick={() => handleExportCSV('gsea')}>
+                            📥 Export CSV
+                        </button>
                     </div>
-                    <div className="gsea-column">
-                        <h4>🔻 Downregulated Pathways</h4>
-                        <ul className="gsea-list down">
-                            {gseaDown.slice(0, 5).map((term, idx) => (
-                                <li key={idx}>
-                                    <span>{term.term}</span>
-                                    <span>NES: {term.nes.toFixed(2)}</span>
-                                </li>
-                            ))}
-                        </ul>
+                    <div className="gsea-columns">
+                        <div className="gsea-column">
+                            <h4>🔺 Upregulated Pathways</h4>
+
+                            <ul className="gsea-list up">
+                                {gseaUp.slice(0, 5).map((term, idx) => (
+                                    <li key={idx}>
+                                        <span>{term.term}</span>
+                                        <span>NES: {term.nes.toFixed(2)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="gsea-column">
+                            <h4>🔻 Downregulated Pathways</h4>
+                            <ul className="gsea-list down">
+                                {gseaDown.slice(0, 5).map((term, idx) => (
+                                    <li key={idx}>
+                                        <span>{term.term}</span>
+                                        <span>NES: {term.nes.toFixed(2)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             )}

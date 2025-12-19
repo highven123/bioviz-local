@@ -7,7 +7,7 @@ export const en = {
     },
     steps: {
         upload: 'Upload Data',
-        select: 'Select Pathway',
+        mapping: 'Map Columns',
         visualize: 'Visualize',
     },
     upload: {
@@ -52,7 +52,7 @@ export const zh = {
     },
     steps: {
         upload: '上传数据',
-        select: '选择通路',
+        mapping: '列名映射',
         visualize: '可视化分析',
     },
     upload: {

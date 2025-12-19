@@ -1,11 +1,10 @@
 import React from 'react';
 
-export type WorkflowStep = 'upload' | 'mapping' | 'gallery' | 'viz';
+export type WorkflowStep = 'upload' | 'mapping' | 'viz';
 
 interface Props {
     currentStep: WorkflowStep;
     canAccessMapping: boolean;
-    canAccessGallery: boolean;
     canAccessViz: boolean;
     onStepClick: (step: WorkflowStep) => void;
 }
@@ -13,20 +12,18 @@ interface Props {
 const STEPS: { key: WorkflowStep; label: string }[] = [
     { key: 'upload', label: '1. Import Data' },
     { key: 'mapping', label: '2. Map Columns' },
-    { key: 'gallery', label: '3. Select Pathway' },
-    { key: 'viz', label: '4. Visualize' }
+    { key: 'viz', label: '3. Visualize' }
 ];
 
 export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, ...props }) => {
     // Simplified logic
-    const stepOrder = ['upload', 'mapping', 'gallery', 'viz'];
+    const stepOrder = ['upload', 'mapping', 'viz'];
     const currentIndex = stepOrder.indexOf(currentStep);
 
     const canAccess = (stepKey: WorkflowStep) => {
         const stepIndex = stepOrder.indexOf(stepKey);
         return stepIndex <= currentIndex ||
             (stepKey === 'mapping' && props.canAccessMapping) ||
-            (stepKey === 'gallery' && props.canAccessGallery) ||
             (stepKey === 'viz' && props.canAccessViz);
     };
 

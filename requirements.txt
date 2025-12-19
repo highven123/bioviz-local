@@ -13,3 +13,5 @@ openai>=1.0.0
 # v2.0 Features (Optional)
 gseapy>=1.0.0   # GSEA enrichment analysis
 Pillow>=9.0.0   # Image processing for WB/IHC/Flow
+mygene>=3.2.0   # Gene ID conversion
+networkx>=3.0   # Graph algorithms for auto-layout

@@ -1,0 +1,179 @@
+{
+  "id": "auto_Test_PPI_Pathway",
+  "name": "Test PPI Pathway",
+  "title": "Test PPI Pathway",
+  "source": "auto_layout",
+  "species": "Human",
+  "nodes": [
+    {
+      "id": "TP53",
+      "name": "TP53",
+      "x": 841.9,
+      "y": 339.7,
+      "width": 24,
+      "height": 24,
+      "type": "gene",
+      "category": "Gene",
+      "color": "#ecf0f1",
+      "value": 1,
+      "expression": null,
+      "hit_name": null
+    },
+    {
+      "id": "MDM2",
+      "name": "MDM2",
+      "x": 176.3,
+      "y": 250.0,
+      "width": 24,
+      "height": 24,
+      "type": "gene",
+      "category": "Gene",
+      "color": "#ecf0f1",
+      "value": 1,
+      "expression": null,
+      "hit_name": null
+    },
+    {
+      "id": "ATM",
+      "name": "ATM",
+      "x": 260.4,
+      "y": 650.9,
+      "width": 24,
+      "height": 24,
+      "type": "gene",
+      "category": "Gene",
+      "color": "#ecf0f1",
+      "value": 1,
+      "expression": null,
+      "hit_name": null
+    },
+    {
+      "id": "BRCA1",
+      "name": "BRCA1",
+      "x": 555.4,
+      "y": 50.0,
+      "width": 24,
+      "height": 24,
+      "type": "gene",
+      "category": "Gene",
+      "color": "#ecf0f1",
+      "value": 1,
+      "expression": null,
+      "hit_name": null
+    },
+    {
+      "id": "CHEK2",
+      "name": "CHEK2",
+      "x": 665.9,
+      "y": 709.3,
+      "width": 24,
+      "height": 24,
+      "type": "gene",
+      "category": "Gene",
+      "color": "#ecf0f1",
+      "value": 1,
+      "expression": null,
+      "hit_name": null
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "MDM2",
+      "target": "BRCA1",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.794
+    },
+    {
+      "id": "e1",
+      "source": "MDM2",
+      "target": "CHEK2",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.983
+    },
+    {
+      "id": "e2",
+      "source": "MDM2",
+      "target": "ATM",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.995
+    },
+    {
+      "id": "e3",
+      "source": "MDM2",
+      "target": "TP53",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e4",
+      "source": "TP53",
+      "target": "ATM",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e5",
+      "source": "TP53",
+      "target": "CHEK2",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e6",
+      "source": "TP53",
+      "target": "BRCA1",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e7",
+      "source": "ATM",
+      "target": "BRCA1",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e8",
+      "source": "ATM",
+      "target": "CHEK2",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    },
+    {
+      "id": "e9",
+      "source": "CHEK2",
+      "target": "BRCA1",
+      "type": "ppi",
+      "relation": "interaction",
+      "score": 0.999
+    }
+  ],
+  "width": 1000,
+  "height": 800,
+  "genes": [
+    "TP53",
+    "MDM2",
+    "ATM",
+    "BRCA1",
+    "CHEK2"
+  ],
+  "metadata": {
+    "layout_algorithm": "force",
+    "auto_generated": true,
+    "generated_at": "2025-12-18T22:23:24.800131",
+    "node_count": 5,
+    "edge_count": 10,
+    "source_url": null,
+    "note": "Diagram automatically generated from gene list using STRING PPI interactions."
+  }
+}

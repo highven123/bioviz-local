@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FileDropZone } from './FileDropZone';
-import { TemplatePicker } from './TemplatePicker';
 import './DataImportWizard.css'; // New CSS file
 import { open } from '@tauri-apps/plugin-dialog';
 
@@ -20,7 +19,7 @@ export interface AnalysisConfig {
         controlCols?: string[];
         treatCols?: string[];
     };
-    pathwayId: string;
+    pathwayId?: string;
     dataType: 'gene' | 'protein' | 'cell';
     /** Statistical methods to apply (multi-select). The first one is used for visualization. */
     analysisMethods: AnalysisMethod[];
@@ -32,10 +31,10 @@ interface DataImportWizardProps {
     addLog: (msg: string) => void;
     isConnected: boolean;
     sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<any>;
-    /** Current step (1=Import, 2=Map, 3=Pathway), can be controlled externally */
-    activeStep?: 1 | 2 | 3;
+    /** Current step (1=Import, 2=Map), can be controlled externally */
+    activeStep?: 1 | 2;
     /** Step change callback, for syncing external navigation */
-    onStepChange?: (step: 1 | 2 | 3) => void;
+    onStepChange?: (step: 1 | 2) => void;
     /** Pass current config (if ready) back to parent component, for triggering analysis from top Step4 */
     onConfigPreview?: (config: AnalysisConfig | null) => void;
 }
@@ -85,23 +84,14 @@ const loadLastConfig = (): AnalysisConfig | null => {
 export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     onComplete,
     addLog,
-    isConnected,
     sendCommand,
     activeStep,
     onStepChange,
     onConfigPreview
 }) => {
-    const [step, setStep] = useState<1 | 2 | 3>(activeStep ?? 1);
+    const [step, setStep] = useState<1 | 2>(activeStep ?? 1);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFileInfo[] | null>(null);
     const [baseDataType, setBaseDataType] = useState<'gene' | 'protein' | 'cell' | null>(null);
-    const [mapping, setMapping] = useState<{
-        gene: string;
-        value: string;
-        pvalue?: string;
-        controlCols?: string[];
-        treatCols?: string[];
-    } | null>(null);
-    const [selectedPathway, setSelectedPathway] = useState<string>('');
     // Skip Wizard Logic
     const lastConfig = loadLastConfig();
     const canQuickLoad = !!lastConfig;
@@ -129,38 +119,15 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
 
     // --- Step 1: Upload ---
 
-    const updateStep = (next: 1 | 2 | 3) => {
+    const updateStep = (next: 1 | 2) => {
         if (next === step) return;
         // Reset state when going back to Step 1 (allows user to change data type)
         if (next === 1) {
             setUploadedFiles(null);
             setBaseDataType(null);
-            setMapping(null);
-            setSelectedPathway('');
         }
         setStep(next);
         onStepChange?.(next);
-    };
-
-    const emitConfigPreview = (overridePathwayId?: string) => {
-        if (!uploadedFiles || uploadedFiles.length === 0 || !mapping) {
-            onConfigPreview?.(null);
-            return;
-        }
-        const pathwayId = overridePathwayId ?? selectedPathway;
-        if (!pathwayId) {
-            onConfigPreview?.(null);
-            return;
-        }
-        const primary = uploadedFiles[0];
-        const cfg: AnalysisConfig = {
-            filePaths: uploadedFiles.map(f => f.path),
-            mapping,
-            pathwayId,
-            dataType: primary.dataType,
-            analysisMethods,
-        };
-        onConfigPreview?.(cfg);
     };
 
     const handleUploadSuccess = (data: any) => {
@@ -382,32 +349,17 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             treatCols: isRawMatrix && rawMode === 'manual' ? manualTreatCols : undefined,
         };
 
-        setMapping(mappingPayload);
-        updateStep(3);
-        // Mapping confirmed but pathway not selected, config still incomplete
-        onConfigPreview?.(null);
-    };
 
-    // --- Step 3: Pathway ---
-    const handlePathwaySelect = (pathwayId: string) => {
-        setSelectedPathway(pathwayId);
-        // When all three elements are ready, pass config preview back to parent
-        emitConfigPreview(pathwayId);
-    };
-
-    const handleVisualizeClick = () => {
-        if (!uploadedFiles || uploadedFiles.length === 0 || !mapping || !selectedPathway) return;
-
+        // Skip step 3 (Pathway) and go straight to Viz
         const primary = uploadedFiles[0];
         const config: AnalysisConfig = {
             filePaths: uploadedFiles.map(f => f.path),
-            mapping: mapping,
-            pathwayId: selectedPathway,
+            mapping: mappingPayload,
+            pathwayId: '', // Empty for now, will be selected in Viz
             dataType: primary.dataType,
             analysisMethods,
         };
 
-        onConfigPreview?.(config);
         saveConfig(config);
         onComplete(config);
     };
@@ -422,7 +374,7 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                 <div className="wizard-steps">
                     <div className={`step-indicator ${step >= 1 ? 'active' : ''}`}>1. Import</div>
                     <div className={`step-indicator ${step >= 2 ? 'active' : ''}`}>2. Map</div>
-                    <div className={`step-indicator ${step >= 3 ? 'active' : ''}`}>3. Pathway</div>
+                    <div className={`step-indicator ${step === 2 ? '' : ''}`} style={{ display: 'none' }}>3. Pathway</div>
                 </div>
             </div>
 
@@ -476,8 +428,6 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                             onClick={() => {
                                                 const next = uploadedFiles.filter(x => x.path !== f.path);
                                                 setUploadedFiles(next.length > 0 ? next : null);
-                                                setMapping(null);
-                                                setSelectedPathway('');
                                                 onConfigPreview?.(null);
                                                 if (next.length === 0) {
                                                     updateStep(1);
@@ -795,46 +745,12 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                 }
                                 className="btn-primary"
                             >
-                                Continue to Pathway →
+                                Start Visualization →
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* STEP 3: PATHWAY */}
-                {step === 3 && uploadedFiles && uploadedFiles.length > 0 && (
-                    <div className="step-wrapper">
-                        <div className="section-header">
-                            <h3>Select Pathway</h3>
-                            <p>Choose a template for visualization</p>
-                        </div>
-
-                        <div className="mapping-card" style={{ padding: '8px' }}>
-                            <TemplatePicker
-                                onSelect={handlePathwaySelect}
-                                disabled={!isConnected}
-                                dataType={uploadedFiles[0].dataType || 'gene'}
-                                sendCommand={sendCommand}
-                            />
-                        </div>
-
-                        <div className="action-bar">
-                            <button
-                                onClick={() => setStep(2)}
-                                className="btn-back"
-                            >
-                                ← Back to Mapping
-                            </button>
-                            <button
-                                onClick={handleVisualizeClick}
-                                disabled={!selectedPathway || !uploadedFiles || uploadedFiles.length === 0 || !mapping}
-                                className="btn-primary"
-                            >
-                                Run analysis & visualize
-                            </button>
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );

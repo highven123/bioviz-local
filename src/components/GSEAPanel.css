@@ -1,27 +1,28 @@
 .gsea-panel {
-    background: rgba(15, 23, 42, 0.95);
-    border: 1px solid rgba(100, 200, 255, 0.2);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 12px;
-    padding: 16px;
-    color: #e2e8f0;
+    padding: 20px;
+    color: var(--text-primary);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    height: 100%;
 }
 
 .gsea-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(100, 200, 255, 0.1);
-    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 16px;
 }
 
 .gsea-header h3 {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: #f8fafc;
+    color: var(--color-accent);
 }
 
 .gsea-mode-toggle {
@@ -35,7 +36,7 @@
 .gsea-mode-toggle button {
     background: transparent;
     border: none;
-    color: #94a3b8;
+    color: var(--text-dim);
     padding: 6px 12px;
     border-radius: 6px;
     cursor: pointer;
@@ -44,12 +45,12 @@
 }
 
 .gsea-mode-toggle button.active {
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: var(--color-accent);
     color: white;
 }
 
 .gsea-mode-toggle button:hover:not(.active) {
-    background: rgba(100, 200, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .gsea-controls {
@@ -62,70 +63,188 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-secondary);
+}
+
+.gene-set-selector-group {
+    display: flex;
+    gap: 8px;
 }
 
 .gsea-controls select {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(100, 200, 255, 0.2);
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    color: #e2e8f0;
+    color: var(--text-primary);
     padding: 8px 10px;
     font-size: 13px;
+    outline: none;
+}
+
+.load-gmt-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-primary);
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.load-gmt-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--text-secondary);
+    transform: translateY(-1px);
 }
 
 .gsea-run-btn {
-    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     border: none;
     border-radius: 8px;
     color: white;
-    padding: 10px 20px;
+    padding: 10px 24px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .gsea-run-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
 }
 
 .gsea-run-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    background: #4b5563;
+    box-shadow: none;
 }
 
 .gsea-info {
     display: flex;
-    gap: 16px;
-    font-size: 12px;
-    color: #64748b;
-    padding: 8px;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 12px;
     background: rgba(0, 0, 0, 0.2);
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-.gsea-error {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px;
-    padding: 10px;
-    color: #fca5a5;
+/* Feedback Styling */
+.gsea-feedback {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 8px;
     font-size: 13px;
+    position: relative;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.gsea-feedback.success {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+}
+
+.gsea-feedback.warning {
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+    color: #fde047;
+}
+
+.gsea-feedback.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+}
+
+.feedback-icon {
+    font-size: 15px;
+    margin-top: 2px;
+}
+
+.feedback-message {
+    flex: 1;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-line;
+}
+
+.feedback-close {
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 4px;
+}
+
+.feedback-close:hover {
+    opacity: 1;
 }
 
 .gsea-results {
-    margin-top: 8px;
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 0.4s ease-out;
 }
 
-.gsea-results h4 {
-    margin: 0 0 8px 0;
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.results-header h4 {
+    margin: 0;
     font-size: 14px;
-    color: #cbd5e1;
+    color: var(--text-secondary);
+}
+
+.export-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.export-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
 }
 
 .enrichr-list,
@@ -135,16 +254,23 @@
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
 
 .enrichr-item {
     display: flex;
     justify-content: space-between;
-    padding: 8px 10px;
-    background: rgba(0, 0, 0, 0.3);
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
     border-radius: 6px;
     font-size: 12px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+}
+
+.enrichr-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.05);
 }
 
 .term-name {
@@ -152,27 +278,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-right: 10px;
+    margin-right: 12px;
+    color: var(--text-primary);
 }
 
 .term-pvalue {
-    color: #10b981;
-    font-family: monospace;
+    color: var(--color-success);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
 }
 
-.gsea-results {
-    display: flex;
+.gsea-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
 }
 
-.gsea-column {
-    flex: 1;
+.gsea-column h4 {
+    font-size: 12px;
+    margin-bottom: 8px;
+    color: var(--text-dim);
 }
 
 .gsea-list li {
     display: flex;
     justify-content: space-between;
-    padding: 6px 8px;
+    padding: 8px;
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
     font-size: 11px;
@@ -184,4 +315,16 @@
 
 .gsea-list.down li {
     border-left: 3px solid #3b82f6;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

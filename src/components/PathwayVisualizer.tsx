@@ -22,6 +22,8 @@ interface PathwayNode {
     name: string;
     x: number;
     y: number;
+    width?: number;
+    height?: number;
     color?: string;
     value?: number;
     expression?: number;
@@ -48,6 +50,8 @@ interface PathwayVisualizerProps {
     isPro?: boolean; // New prop for monetization tier
     /** Base name of uploaded data file (without extension), used for export filenames */
     sourceFileBase?: string;
+    enrichrResults?: any[];
+    gseaResults?: { up: any[], down: any[] };
 }
 
 export interface PathwayVisualizerRef {
@@ -56,6 +60,35 @@ export interface PathwayVisualizerRef {
     exportSVG: () => Promise<void>;
     exportPPTX: () => Promise<void>;
 }
+
+// Helper for expression color mapping (RdBu Divergent)
+const getColorForExpression = (val: number | undefined, isDark: boolean): string => {
+    if (val === undefined || val === null) return isDark ? '#475569' : '#cbd5e1'; // Slate gray for background nodes
+
+    // Scale: -2 (Blue) -> 0 (White) -> +2 (Red)
+    // Clamp value to [-2.5, 2.5] for better contrast
+    const clamped = Math.max(-2.5, Math.min(2.5, val));
+
+    // Define divergent color stops (Scientific RdBu)
+    // Blue palette (Down): #2166ac, #4393c3, #92c5de, #d1e5f0
+    // Red palette (Up): #fddbc7, #f4a582, #d6604d, #b2182b
+
+    if (clamped > 0) {
+        // Upregulated (Light Orange to Deep Red)
+        if (clamped < 0.5) return '#fddbc7';
+        if (clamped < 1.0) return '#f4a582';
+        if (clamped < 2.0) return '#d6604d';
+        return '#b2182b';
+    } else if (clamped < 0) {
+        // Downregulated (Light Blue to Deep Blue)
+        if (clamped > -0.5) return '#d1e5f0';
+        if (clamped > -1.0) return '#92c5de';
+        if (clamped > -2.0) return '#4393c3';
+        return '#2166ac';
+    }
+
+    return isDark ? '#334155' : '#f8fafc'; // Neutral
+};
 
 export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisualizerProps>(({
     nodes,
@@ -68,6 +101,8 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
     selectedNodeNames = [],
     isPro = false,
     sourceFileBase,
+    enrichrResults = [],
+    gseaResults = { up: [], down: [] },
 }, ref) => {
     const isDark = theme === 'dark';
     const textColor = isDark ? '#eee' : '#333';
@@ -179,17 +214,24 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
             }
 
             // Base symbol size (expression-based)
-            const baseSize = 28 + (node.value ? Math.min(Math.abs(node.value) * 3, 12) : 0);
+            // UPDATED: Line width is now dynamic (base 1.5). Dots are exactly 2x line width (3px base).
+            const baseLineWidth = 1.5;
+            const dotDiameter = baseLineWidth * 2;
+
+            const templateWidth = node.width || dotDiameter;
+            const baseSize = templateWidth + (node.value ? Math.min(Math.abs(node.value) * (templateWidth / 10), templateWidth / 2) : 0);
 
             // Visual enhancement logic:
             // Selected nodes become larger, others keep original size and brightness
+            const isDot = templateWidth < 10;
             const symbolSize = isSelected ? baseSize * 1.5 : baseSize;
             const opacity = 1.0;
             const borderColor = isDark ? '#fff' : '#333';
-            const borderWidth = 1;
+            const borderWidth = isDot ? 0 : 1; // Remove border for dots to keep exact size ratio
 
-            // Keep original color for all nodes
-            const nodeColor = node.color || (isDark ? '#95a5a6' : '#bdc3c7');
+            // Dynamic color based on expression data
+            // Prefer expression (Log2FC) if available, otherwise fallback to template color
+            const nodeColor = getColorForExpression(node.expression || (node.value as any), isDark);
 
             return {
                 id: node.id,
@@ -203,19 +245,20 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                     color: nodeColor,
                     borderColor: borderColor,
                     borderWidth: borderWidth,
-                    shadowBlur: 5,
+                    shadowBlur: isDot ? 0 : 5, // Remove shadow for tiny dots to avoid bloom
                     shadowColor: 'rgba(0, 0, 0, 0.3)',
                     opacity: opacity
                 },
                 label: {
-                    show: true,
+                    show: isSelected, // Simplified: Only show label for selected nodes to avoid clutter
                     formatter: (params: any) => {
                         return params.name.replace(/hsa:?\d+/gi, '').replace(/kegg/gi, '').trim();
                     },
-                    color: getContrastColor(nodeColor),
+                    color: isDot ? (isDark ? '#bbb' : '#444') : getContrastColor(nodeColor),
                     fontSize: isSelected ? 11 : 10,
                     fontWeight: isSelected ? 'bold' : 'normal',
-                    position: 'inside',
+                    position: isDot ? 'top' : 'inside',
+                    distance: isDot ? 5 : 0,
                     width: 45,
                     overflow: 'break',
                     lineHeight: 11,
@@ -257,11 +300,15 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                 color = getRelationColor(edge.relation, usedRelationsStringMap);
             }
 
+            const baseLineWidth = 1.5;
+            const score = (edge as any).score || 0.4;
+            const lineWidth = baseLineWidth * (score * 2);
+
             return {
                 source: edge.source,
                 target: edge.target,
                 label: {
-                    show: !!edge.relation,
+                    show: false, // Hide edge labels by default for a simpler look
                     formatter: edge.relation,
                     fontSize: 10,
                     color: isRelevant ? color : '#777',
@@ -270,11 +317,11 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                 lineStyle: {
                     curveness: 0.2,
                     color: isRelevant ? color : '#444',
-                    width: isRelevant ? 2.5 : 1,
-                    opacity: isRelevant ? 1 : 0.4
+                    width: lineWidth,
+                    opacity: isRelevant ? 0.8 : 0.3
                 },
                 symbol: ['none', 'arrow'],
-                symbolSize: isRelevant ? 10 : 6
+                symbolSize: lineWidth * 3
             };
         });
 
@@ -441,9 +488,9 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                     layout: 'none', // Use x/y provided in data
                     data: graphNodes.map(n => ({ ...n, fixed: true })), // Ensure everything is fixed
                     links: graphLinks,
-                    roam: true, // Keep zoom/pan, but nodes shouldn't move relative to each other
-                    scaleLimit: { min: 0.5, max: 4 }, // Limit zoom: 0.5x to 4x
-                    draggable: false, // Prevent dragging nodes
+                    roam: true,
+                    scaleLimit: { min: 0.01, max: 100 },
+                    draggable: false,
                     animation: false, // Disable all animations to prevent "flying" effect
                     lineStyle: {
                         opacity: 0.9,
@@ -818,6 +865,66 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                 slide5.addText("No mapping data available.", { x: 3, y: 3, color: 'FFFFFF' });
             }
             slide5.addText(contactText, contactOptions);
+
+            // --- SLIDE 7: Enrichment Analysis (ORA) (Optional) ---
+            if (enrichrResults && enrichrResults.length > 0) {
+                const oraSlide = pptx.addSlide({ masterName: 'DARK_THEME' });
+                oraSlide.addText('Enrichment Analysis (ORA)', sectionTitleStyle);
+
+                const oraTableData = [
+                    [
+                        { text: 'Term', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: 'Adj. P-value', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: 'Overlap', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } }
+                    ],
+                    ...enrichrResults.slice(0, 15).map((res, i) => {
+                        const rowBg = i % 2 === 0 ? '2d2d3a' : '1a1a24';
+                        return [
+                            { text: res.term, options: { fill: { color: rowBg }, color: bodyColor } },
+                            { text: res.adjusted_p_value.toExponential(2), options: { fill: { color: rowBg }, color: '6366F1' } },
+                            { text: res.overlap, options: { fill: { color: rowBg }, color: bodyColor } }
+                        ];
+                    })
+                ];
+
+                oraSlide.addTable(oraTableData, {
+                    x: 0.75, y: 1.3, w: 8.5, fontSize: 10
+                });
+                oraSlide.addText(contactText, contactOptions);
+            }
+
+            // --- SLIDE 8: GSEA Results (Optional) ---
+            if (gseaResults && (gseaResults.up.length > 0 || gseaResults.down.length > 0)) {
+                const gseaSlide = pptx.addSlide({ masterName: 'DARK_THEME' });
+                gseaSlide.addText('GSEA Results (Top 15)', sectionTitleStyle);
+
+                const allGsea = [
+                    ...gseaResults.up.slice(0, 8).map(r => ({ ...r, status: 'UP' })),
+                    ...gseaResults.down.slice(0, 8).map(r => ({ ...r, status: 'DOWN' }))
+                ].sort((a, b) => Math.abs(b.nes) - Math.abs(a.nes)).slice(0, 15);
+
+                const gseaTableData = [
+                    [
+                        { text: 'Term', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: 'NES', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } },
+                        { text: 'FDR', options: { fill: { color: accentColor }, color: 'FFFFFF', bold: true } }
+                    ],
+                    ...allGsea.map((res, i) => {
+                        const rowBg = i % 2 === 0 ? '2d2d3a' : '1a1a24';
+                        const color = res.status === 'UP' ? '#ff6b6b' : '#3b82f6';
+                        return [
+                            { text: res.term, options: { fill: { color: rowBg }, color: bodyColor } },
+                            { text: res.nes.toFixed(2), options: { fill: { color: rowBg }, color: color, bold: true } },
+                            { text: res.fdr.toExponential(2), options: { fill: { color: rowBg }, color: color } }
+                        ];
+                    })
+                ];
+
+                gseaSlide.addTable(gseaTableData, {
+                    x: 0.75, y: 1.3, w: 8.5, fontSize: 10
+                });
+                gseaSlide.addText(contactText, contactOptions);
+            }
 
             // --- LAST SLIDE: References ---
             const refSlide = pptx.addSlide({ masterName: 'DARK_THEME' });

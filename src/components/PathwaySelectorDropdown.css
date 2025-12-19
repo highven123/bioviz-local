@@ -1,0 +1,80 @@
+.pathway-selector-container {
+    position: relative;
+    display: inline-block;
+}
+
+.pathway-selector-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    max-width: 300px;
+}
+
+.pathway-selector-trigger:hover {
+    border-color: var(--brand-primary);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.pathway-selector-trigger.active {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+.pathway-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.pathway-id {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.dropdown-arrow {
+    font-size: 8px;
+    color: var(--text-dim);
+    margin-left: 4px;
+}
+
+.pathway-selector-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 600px;
+    max-height: 500px;
+    background: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Override TemplatePicker styles for dropdown usage */
+.pathway-selector-popover .template-picker {
+    height: 100%;
+    overflow-y: auto;
+    padding: 16px;
+    background: transparent;
+}
+
+.pathway-selector-popover .template-header {
+    padding-top: 0;
+}

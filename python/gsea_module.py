@@ -7,13 +7,19 @@ import sys
 import json
 import logging
 import csv
-from typing import Dict, List, Any, Optional, Tuple
+import pandas as pd
+from typing import Dict, List, Any, Optional, Tuple, TYPE_CHECKING
 from pathlib import Path
+import gseapy as gp
+from gene_set_utils import load_gmt, validate_gene_sets, get_gene_set_stats
 
 # Check if gseapy is available
 try:
-    import gseapy as gp
-    import pandas as pd
+    # gseapy and pandas are already imported at the top, this block
+    # now primarily sets the availability flag and logs.
+    # We re-check here to ensure the modules are indeed functional.
+    _ = gp.__version__ # Accessing a gseapy attribute to trigger potential errors
+    _ = pd.__version__ # Accessing a pandas attribute to trigger potential errors
     GSEAPY_AVAILABLE = True
     logging.info(f"[GSEA] gseapy version {gp.__version__} loaded successfully")
 except ImportError as e:
@@ -417,3 +423,46 @@ def handle_get_gene_sets(_payload: Dict[str, Any]) -> Dict[str, Any]:
         "status": "ok",
         "gene_sets": get_available_gene_sets()
     }
+
+
+def handle_load_gmt(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle LOAD_GMT command."""
+    file_path = payload.get("path")
+    if not file_path:
+        return {"status": "error", "message": "No file path provided"}
+    
+    try:
+        gene_sets = load_gmt(file_path)
+        valid_sets, warnings = validate_gene_sets(gene_sets)
+        stats = get_gene_set_stats(valid_sets)
+        
+        return {
+            "status": "ok",
+            "path": file_path,
+            "stats": stats,
+            "warnings": warnings,
+            "gene_set_id": file_path  # Use path as ID for gp.enrichr
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def handle_export_csv(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle EXPORT_CSV command for results."""
+    results = payload.get("results")
+    output_path = payload.get("output_path")
+    analysis_type = payload.get("type", "enrichr")
+    
+    if not results or not output_path:
+        return {"status": "error", "message": "Missing results or output_path"}
+    
+    try:
+        if analysis_type == "enrichr":
+            export_enrichment_csv(results, output_path)
+        else:
+            export_gsea_csv(results, output_path)
+            
+        return {"status": "ok", "message": f"Results exported to {output_path}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+

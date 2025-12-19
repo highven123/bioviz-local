@@ -22,6 +22,11 @@ import sys
 import os
 import json
 import logging
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import traceback
 import math
 from pathlib import Path
@@ -68,6 +73,15 @@ except ImportError as e:
     MULTI_SAMPLE_AVAILABLE = False
     logging.warning(f"[INIT] Multi-sample module not available: {e}")
     print("[BioEngine] Multi-sample module not available", file=sys.stderr)
+
+# Import pathway template manager
+try:
+    from pathway.template_manager import PathwayTemplateManager
+    TEMPLATE_MANAGER = PathwayTemplateManager()
+    logging.info("[INIT] PathwayTemplateManager initialized")
+except ImportError as e:
+    TEMPLATE_MANAGER = None
+    logging.warning(f"[INIT] Template manager not available: {e}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -648,8 +662,7 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "message": "Missing 'file_path' parameter"}
     if not mapping or 'gene' not in mapping or 'value' not in mapping:
         return {"status": "error", "message": "Missing or invalid 'mapping' parameter"}
-    if not template_id:
-        return {"status": "error", "message": "Missing 'template_id' parameter"}
+    # template_id is now optional in the 3-step workflow
     
     try:
         gene_col = mapping['gene']
@@ -957,9 +970,24 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
         # analysis_table_path = write_analysis_table(file_path, volcano_data)
         analysis_table_path = None
 
-        # Color the pathway
-        colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
-        statistics = get_pathway_statistics(colored_pathway)
+        # Color the pathway if template_id is provided
+        if template_id:
+            colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
+            statistics = get_pathway_statistics(colored_pathway)
+        else:
+            colored_pathway = None
+            # Generic statistics fallback when no pathway is selected
+            up = len([v for v in volcano_data if v['status'] == 'UP'])
+            down = len([v for v in volcano_data if v['status'] == 'DOWN'])
+            ns = len(volcano_data) - up - down
+            statistics = {
+                'total_nodes': len(volcano_data),
+                'upregulated': up,
+                'downregulated': down,
+                'unchanged': ns,
+                'percent_upregulated': 100 * up / len(volcano_data) if volcano_data else 0,
+                'percent_downregulated': 100 * down / len(volcano_data) if volcano_data else 0
+            }
         
         # Generate AI insights from analysis results
         try:
@@ -1266,6 +1294,68 @@ def handle_chat_confirm(payload: Dict[str, Any]) -> Dict[str, Any]:
             "message": f"Error confirming proposal: {str(e)}"
         }
 
+def _get_kegg_participants(pathway_id: str) -> List[str]:
+    """Fetch gene symbols for a KEGG pathway."""
+    import requests
+    from typing import List
+    try:
+        # Step 1: Get Entrez IDs
+        kid = pathway_id
+        if ':' in kid: kid = kid.split(':')[-1]
+        url = f"https://rest.kegg.jp/link/hsa/{kid}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        entrez_ids = []
+        for line in response.text.strip().split('\n'):
+            if '\t' in line:
+                entrez_id = line.split('\t')[1]
+                entrez_ids.append(entrez_id)
+        
+        if not entrez_ids:
+            return []
+            
+        # Step 2: Get symbols for these Entrez IDs (batch of 100)
+        symbols = []
+        for i in range(0, len(entrez_ids), 100):
+            batch = entrez_ids[i:i+100]
+            list_url = f"https://rest.kegg.jp/list/{'+'.join(batch)}"
+            list_response = requests.get(list_url, timeout=10)
+            list_response.raise_for_status()
+            
+            for line in list_response.text.strip().split('\n'):
+                if '\t' in line:
+                    # hsa:123  SYMBOL, full name
+                    symbol_part = line.split('\t')[1]
+                    symbol = symbol_part.split(',')[0].strip()
+                    symbols.append(symbol)
+                    
+        logging.info(f"Retrieved {len(symbols)} genes from KEGG for {pathway_id}")
+        return symbols
+    except Exception as e:
+        logging.warning(f"Failed to get KEGG participants: {e}")
+        return []
+
+def _get_wikipathways_participants(pathway_id: str) -> List[str]:
+    """Fetch gene symbols for a WikiPathways pathway."""
+    import requests
+    from typing import List
+    try:
+        wid = pathway_id
+        if '_' in wid: wid = wid.split('_')[0]
+        # Use getXrefList with code 'H' for HGNC symbols
+        url = f"https://webservice.wikipathways.org/getXrefList?pwId={wid}&code=H&format=json"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        symbols = data.get('xrefs', [])
+        
+        logging.info(f"Retrieved {len(symbols)} genes from WikiPathways for {pathway_id}")
+        return symbols
+    except Exception as e:
+        logging.warning(f"Failed to get WikiPathways participants: {e}")
+        return []
 
 def handle_chat_reject(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -1422,11 +1512,19 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "DESCRIBE_VISUALIZATION": handle_describe_visualization,
         }
         
-        # V2.0: Add GSEA handlers if available
         if GSEA_AVAILABLE:
+            from gsea_module import (
+                handle_run_enrichr,
+                handle_run_gsea,
+                handle_get_gene_sets,
+                handle_load_gmt,
+                handle_export_csv
+            )
             return_handlers["ENRICHR"] = handle_run_enrichr
             return_handlers["GSEA"] = handle_run_gsea
             return_handlers["GET_GENE_SETS"] = handle_get_gene_sets
+            return_handlers["LOAD_GMT"] = handle_load_gmt
+            return_handlers["EXPORT_CSV"] = handle_export_csv
             logging.debug("GSEA handlers available")
         else:
             logging.warning("GSEA handlers NOT available")
@@ -1455,6 +1553,25 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             logging.debug("DE Analysis handler registered")
         except ImportError as e:
             logging.warning(f"DE Analysis handler NOT available: {e}")
+        
+        # V2.0: Add Enrichment Framework v2.0 handlers
+        return_handlers["ENRICH_RUN"] = handle_enrich_run
+        return_handlers["GENE_SET_LIST"] = handle_gene_set_list
+        return_handlers["LOAD_CUSTOM_GMT"] = handle_load_custom_gmt
+        return_handlers["BATCH_ENRICH_RUN"] = handle_batch_enrich_run
+        return_handlers["EXPORT_ENRICHMENT"] = handle_export_enrichment
+        logging.debug("Enrichment Framework v2.0 handlers registered")
+        
+        # V3.0: Reactome visualization handlers
+        return_handlers["LOAD_REACTOME_PATHWAY"] = handle_load_reactome_pathway
+        return_handlers["SEARCH_REACTOME"] = handle_search_reactome
+        logging.debug("Reactome v3.0 handlers registered")
+        
+        # V4.0: Unified pathway framework handlers
+        return_handlers["LOAD_UNIFIED_PATHWAY"] = handle_load_unified_pathway
+        return_handlers["SEARCH_PATHWAYS"] = handle_search_pathways
+        return_handlers["SEARCH_AND_LOAD_PATHWAY"] = handle_search_and_load_pathway
+        logging.debug("Unified Pathway v4.0 handlers registered")
 
         # Handlers that send response directly (new style)
         direct_send_handlers = {
@@ -1876,9 +1993,782 @@ def handle_download_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
          return {"status": "error", "message": "No pathway ID provided"}
     return download_kegg_pathway(pid)
 
+
 def handle_list_templates(_payload: Dict[str, Any]) -> Dict[str, Any]:
     """List local pathway templates from user folder and bundled assets."""
     return {"status": "ok", "templates": list_local_templates()}
 
+
+# ============================================================================
+# Enrichment Framework v2.0 Handlers
+# ============================================================================
+
+def handle_enrich_run(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run enrichment analysis (ORA or GSEA) using new enrichment framework."""
+    try:
+        from enrichment.pipeline import EnrichmentPipeline
+        
+        method = payload.get('method', 'ORA').upper()
+        genes = payload.get('genes', [])
+        gene_set_source = payload.get('gene_set_source', 'reactome')
+        species = payload.get('species', 'auto')
+        custom_gmt_path = payload.get('custom_gmt_path')
+        params = payload.get('parameters', {})
+        
+        if not genes:
+            return {"status": "error", "message": "No genes provided"}
+            
+        pipeline = EnrichmentPipeline()
+        
+        if method == 'ORA':
+            if isinstance(genes, dict):
+                genes = list(genes.keys())
+            
+            result = pipeline.run_ora(
+                gene_list=genes,
+                gene_set_source=gene_set_source,
+                species=species,
+                custom_gmt_path=custom_gmt_path,
+                p_cutoff=params.get('p_cutoff', 0.05),
+                min_overlap=params.get('min_overlap', 3),
+                fdr_method=params.get('fdr_method', 'fdr_bh')
+            )
+        
+        elif method == 'GSEA':
+            if isinstance(genes, list):
+                return {"status": "error", "message": "GSEA requires ranked gene list"}
+            
+            result = pipeline.run_gsea(
+                gene_ranking=genes,
+                gene_set_source=gene_set_source,
+                species=species,
+                custom_gmt_path=custom_gmt_path,
+                min_size=params.get('min_size', 5),
+                max_size=params.get('max_size', 500),
+                permutation_num=params.get('permutation_num', 1000)
+            )
+        
+        # Advanced Intelligence Logic (Rule-based)
+        all_res = []
+        if method == 'ORA':
+            all_res = result.get('results', [])
+        else:
+            all_res = result.get('up_regulated', []) + result.get('down_regulated', [])
+            
+        sig_pathways = [p for p in all_res if p.get('fdr', 1.0) < 0.05]
+        
+        # 1. Basic Stats
+        sig_count = len(sig_pathways)
+        
+        # 2. Key Drivers (Genes in multiple pathways)
+        gene_to_pathways = {}
+        for p in sig_pathways:
+            path_name = p.get('pathway_name', 'Unknown')
+            # Handle hit_genes string or list
+            hits = p.get('hit_genes', [])
+            if isinstance(hits, str):
+                hits = [g.strip() for g in hits.split(',') if g.strip()]
+            for g in hits:
+                if g not in gene_to_pathways: gene_to_pathways[g] = []
+                gene_to_pathways[g].append(path_name)
+        
+        drivers = sorted([{"gene": g, "count": len(paths), "paths": paths[:3]} 
+                        for g, paths in gene_to_pathways.items() if len(paths) >= 3], 
+                        key=lambda x: x['count'], reverse=True)[:5]
+        
+        # 3. Orphan Significant Genes
+        # We need the original genes to find orphans
+        all_input_genes = []
+        if isinstance(genes, dict):
+            # genes is {symbol: logfc}
+            all_input_genes = [{"gene": g, "logfc": val} for g, val in genes.items()]
+        else:
+            all_input_genes = [{"gene": g, "logfc": 0} for g in genes]
+            
+        # Filter for significant input genes (heuristic: top 50 by magnitude or p-value if we had it)
+        # Since handle_enrich_run only gets 'genes', we use magnitude of logfc if provided
+        sig_input = sorted([g for g in all_input_genes if abs(g['logfc']) > 1.0], 
+                         key=lambda x: abs(x['logfc']), reverse=True)[:30]
+        
+        # A gene is an orphan if it's significant in DE but doesn't appear in ANY of the top 10 significant pathways
+        top_10_pathway_genes = set()
+        for p in sig_pathways[:10]:
+            hits = p.get('hit_genes', [])
+            if isinstance(hits, str):
+                hits = [g.strip() for g in hits.split(',') if g.strip()]
+            top_10_pathway_genes.update(hits)
+            
+        orphans = [g['gene'] for g in sig_input if g['gene'] not in top_10_pathway_genes][:5]
+        
+        # 4. Antagonistic Pathways (Identify if any pathways show balanced mixed regulation)
+        antagonistic_paths = []
+        for p in sig_pathways:
+            hits = p.get('hit_genes', [])
+            if isinstance(hits, str): hits = [g.strip() for g in hits.split(',') if g.strip()]
+            
+            up_c, down_c = 0, 0
+            for g in hits:
+                lfc = genes.get(g, 0) if isinstance(genes, dict) else 0
+                if lfc > 0.5: up_c += 1
+                elif lfc < -0.5: down_c += 1
+            
+            is_antag = (up_c > 0 and down_c > 0 and (min(up_c, down_c) / max(1, len(hits)) > 0.25))
+            if is_antag:
+                p['is_antagonistic'] = True
+                antagonistic_paths.append(p.get('pathway_name', 'Unknown'))
+            else:
+                p['is_antagonistic'] = False
+
+        # 5. Redundancy / Hierarchy (Group pathways with similar names)
+        keyword_counts = {}
+        stop_words = {'signaling', 'pathway', 'by', 'of', 'and', 'the', 'in', 'r-hsa', 'hsa'}
+        for p in sig_pathways[:15]:
+            words = set(p.get('pathway_name', '').lower().replace('-', ' ').replace('_', ' ').split())
+            cleaned = words - stop_words
+            for w in cleaned:
+                if len(w) > 3:
+                    keyword_counts[w] = keyword_counts.get(w, 0) + 1
+        
+        redundant_themes = [k for k, v in keyword_counts.items() if v >= 4][:3]
+
+        # 6. Silent Pathway Members (Significant enrichment but few total hits)
+        silent_paths = []
+        for p in sig_pathways[:5]:
+            # If overlap is very low (e.g. < 10% of pathway) but still p < 0.05
+            # We need the denominator from overlap_ratio like "10/700"
+            overlap_str = p.get('overlap_ratio', '0/1')
+            try:
+                hits_c, total_c = map(int, overlap_str.split('/'))
+                if hits_c / total_c < 0.05 and hits_c > 0:
+                    silent_paths.append(p.get('pathway_name', 'Unknown'))
+            except: pass
+
+        # 7. Leading-Edge Trends (For GSEA - consistency check)
+        # (Already handled by stat logic, but we can flag it)
+
+        # Build Insights
+        insights = []
+        if sig_count > 0:
+            insights.append(f"Found {sig_count} pathways with high statistical confidence.")
+            
+            if redundant_themes:
+                themes_str = ", ".join([t.capitalize() for t in redundant_themes])
+                insights.append(f"Systemic Redundancy: Multiple significant hits relate to {themes_str} processes.")
+            
+            if drivers:
+                insights.append(f"Key Drivers: {', '.join([d['gene'] for d in drivers])} are influencing multiple systems.")
+            
+            if antagonistic_paths:
+                insights.append(f"Antagonistic Regulation: Pathways like '{antagonistic_paths[0]}' show balanced mixed regulation.")
+            
+            if orphans:
+                insights.append(f"Orphan Genes: {', '.join(orphans)} show high impact but aren't mapped to top pathways.")
+            
+            if silent_paths:
+                insights.append(f"Precise Regulation: '{silent_paths[0]}' is significant despite only a tiny fraction of its members being active.")
+        else:
+            # Baseline / Integrity Layer
+            input_size = len(genes) if isinstance(genes, list) else len(genes.keys())
+            if input_size < 30:
+                insights.append("Data Sparsity: Input gene list is too short for reliable biological enrichment.")
+            else:
+                insights.append("Discrete Signals: High-impact genes detected but they do not cluster into known biological pathways.")
+
+        result['intelligence_report'] = {
+            "summary": insights[0] if insights else "Analysis complete.",
+            "full_details": insights,
+            "sig_count": sig_count,
+            "drivers": drivers,
+            "orphans": orphans,
+            "antagonistic": antagonistic_paths[:3],
+            "redundant_themes": redundant_themes,
+            "silent_paths": silent_paths[:3]
+        }
+        
+        result['standard_summary'] = insights[0] if insights else "Analysis complete."
+        return result
+        
+    except Exception as e:
+        logging.error(f"Enrichment analysis failed: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+
+def handle_gene_set_list(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """List available gene set sources."""
+    try:
+        from enrichment.sources import GeneSetSourceManager
+        
+        species = payload.get('species', 'human')
+        manager = GeneSetSourceManager()
+        
+        sources = manager.get_available_sources(species)
+        
+        return {
+            "status": "ok",
+            "sources": sources,
+            "species": species
+        }
+        
+    except Exception as e:
+        logging.error(f"Failed to list gene sets: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_load_custom_gmt(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Load and validate a custom GMT file."""
+    try:
+        from gene_set_utils import load_gmt, get_gene_set_stats, validate_gmt
+        
+        gmt_path = payload.get('path')
+        gmt_content = payload.get('content')  # For direct text upload
+        
+        if not gmt_path and not gmt_content:
+            return {"status": "error", "message": "No GMT file path or content provided"}
+        
+        # If content is provided directly (from frontend drag-drop)
+        if gmt_content:
+            import tempfile
+            import os
+            
+            # Save to temp file
+            temp_dir = Path.home() / '.bioviz' / 'cache' / 'custom_gmt'
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            temp_file = temp_dir / f"custom_{hash(gmt_content[:100])}.gmt"
+            
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(gmt_content)
+            
+            gmt_path = str(temp_file)
+        
+        # Validate and load
+        validation = validate_gmt(gmt_path)
+        if not validation['valid']:
+            return {"status": "error", "message": validation['error']}
+        
+        # Load gene sets
+        gene_sets = load_gmt(gmt_path)
+        stats = get_gene_set_stats(gene_sets)
+        
+        # Cache the loaded GMT for later use
+        from enrichment.sources import GeneSetSourceManager
+        manager = GeneSetSourceManager()
+        manager.register_custom_gmt(gmt_path, gene_sets)
+        
+        return {
+            "status": "ok",
+            "path": gmt_path,
+            "stats": {
+                "geneSets": stats['num_sets'],
+                "totalGenes": stats['total_genes'],
+                "avgSetSize": stats['avg_set_size'],
+                "fileName": Path(gmt_path).name
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Failed to load custom GMT: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_batch_enrich_run(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run batch enrichment analysis on multiple gene lists."""
+    try:
+        from enrichment.batch import run_batch_enrichment
+        
+        gene_lists = payload.get('gene_lists', {})
+        gene_set_source = payload.get('gene_set_source', 'reactome')
+        species = payload.get('species', 'human')
+        method = payload.get('method', 'ORA')
+        parameters = payload.get('parameters', {})
+        
+        if not gene_lists:
+            return {"status": "error", "message": "No gene lists provided"}
+        
+        logging.info(f"Running batch enrichment: {len(gene_lists)} samples, method={method}")
+        
+        result = run_batch_enrichment(
+            gene_lists=gene_lists,
+            gene_set_source=gene_set_source,
+            species=species,
+            method=method,
+            parameters=parameters
+        )
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"Batch enrichment failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_export_enrichment(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Export enrichment results to file."""
+    try:
+        from enrichment.batch import export_batch_results
+        import tempfile
+        from pathlib import Path
+        
+        results = payload.get('results', {})
+        format = payload.get('format', 'csv')
+        output_path = payload.get('output_path')
+        
+        if not results:
+            return {"status": "error", "message": "No results to export"}
+        
+        # If no output path, create temp file
+        if not output_path:
+            temp_dir = Path(tempfile.gettempdir())
+            ext = {'xlsx': 'xlsx', 'csv': 'csv', 'json': 'json'}.get(format, 'csv')
+            output_path = str(temp_dir / f"enrichment_results.{ext}")
+        
+        saved_path = export_batch_results(
+            batch_results=results,
+            output_path=output_path,
+            format=format
+        )
+        
+        return {
+            "status": "ok",
+            "path": saved_path,
+            "format": format
+        }
+        
+    except Exception as e:
+        logging.error(f"Export failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_load_reactome_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Load a Reactome pathway for visualization."""
+    try:
+        from reactome.client import ReactomeClient, convert_reactome_to_template
+        
+        pathway_id = payload.get('pathway_id')
+        if not pathway_id:
+            return {"status": "error", "message": "No pathway_id provided"}
+        
+        logging.info(f"Loading Reactome pathway: {pathway_id}")
+        
+        client = ReactomeClient()
+        
+        # Get pathway info
+        pathway_info = client.get_pathway_info(pathway_id)
+        if not pathway_info:
+            return {"status": "error", "message": f"Pathway not found: {pathway_id}"}
+        
+        # Get diagram data
+        diagram_data, entity_map = client.get_pathway_diagram(pathway_id)
+        
+        # Get participating genes for expression overlay
+        gene_list = client.get_pathway_participants(pathway_id)
+        
+        # Convert to BioViz template format
+        template = convert_reactome_to_template(diagram_data, entity_map, pathway_info)
+        template['genes'] = gene_list
+        
+        return {
+            "status": "ok",
+            "pathway": template,
+            "pathway_id": pathway_id,
+            "name": pathway_info.get('displayName', ''),
+            "source": "reactome",
+            "gene_count": len(gene_list)
+        }
+        
+    except Exception as e:
+        logging.error(f"Failed to load Reactome pathway: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_search_reactome(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Search for Reactome pathways."""
+    try:
+        from reactome.client import ReactomeClient
+        
+        query = payload.get('query', '')
+        species = payload.get('species', 'Homo sapiens')
+        limit = payload.get('limit', 20)
+        
+        if not query:
+            return {"status": "error", "message": "No search query provided"}
+        
+        client = ReactomeClient()
+        results = client.search_pathways(query, species, limit)
+        
+        return {
+            "status": "ok",
+            "results": results,
+            "count": len(results)
+        }
+        
+    except Exception as e:
+        logging.error(f"Reactome search failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_load_unified_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Load a pathway using the unified adapter registry."""
+    try:
+        from pathway import AdapterRegistry
+        
+        source = payload.get('source', 'kegg')
+        pathway_id = payload.get('pathway_id')
+        
+        if not pathway_id:
+            return {"status": "error", "message": "No pathway_id provided"}
+        
+        logging.info(f"Loading unified pathway: {source}/{pathway_id}")
+        
+        pathway = AdapterRegistry.load_pathway(source, pathway_id)
+        
+        if not pathway:
+            return {"status": "error", "message": f"Pathway not found: {source}/{pathway_id}"}
+        
+        return {
+            "status": "ok",
+            "pathway": pathway.to_dict(),
+            "source": source,
+            "pathway_id": pathway_id,
+            "name": pathway.name,
+            "gene_count": len(pathway.genes)
+        }
+        
+    except Exception as e:
+        logging.error(f"Failed to load unified pathway: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_search_pathways(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Search pathways across all registered sources."""
+    try:
+        from pathway import AdapterRegistry
+        
+        query = payload.get('query', '')
+        species = payload.get('species', 'human')
+        sources = payload.get('sources')  # Optional list of sources to search
+        limit = payload.get('limit', 10)
+        
+        if not query:
+            return {"status": "error", "message": "No search query provided"}
+        
+        if sources:
+            # Search specific sources
+            results = {}
+            for source in sources:
+                adapter = AdapterRegistry.get(source)
+                if adapter:
+                    results[source] = [
+                        {'id': p.id, 'name': p.name, 'source': p.source, 'species': p.species}
+                        for p in adapter.search(query, species, limit)
+                    ]
+        else:
+            # Search all sources
+            all_results = AdapterRegistry.search_all(query, species, limit)
+            results = {
+                src: [{'id': p.id, 'name': p.name, 'source': p.source, 'species': p.species} for p in pathways]
+                for src, pathways in all_results.items()
+            }
+        
+        total_count = sum(len(v) for v in results.values())
+        
+        return {
+            "status": "ok",
+            "results": results,
+            "total_count": total_count,
+            "sources_searched": list(results.keys())
+        }
+        
+    except Exception as e:
+        logging.error(f"Pathway search failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def handle_search_and_load_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Search and load pathway from any source with template caching.
+    
+    Strategy:
+    1. Extract pathway ID if present in name
+    2. Check template manager (bundled + cache)
+    3. If not found, download from API and cache
+    4. If download fails, suggest alternative sources
+    """
+    try:
+        pathway_name = payload.get('pathway_name', '')
+        source = payload.get('source', 'reactome').lower()
+        species = payload.get('species', 'human')
+        
+        if not pathway_name:
+            return {"status": "error", "message": "No pathway name provided"}
+        
+        logging.info(f"Search and load pathway: '{pathway_name}' from {source}")
+        
+        # Step 1: Extract pathway ID if embedded in name
+        pathway_id = None
+        import re
+        
+        if source == 'reactome':
+            # Format: "Pathway Name R-HSA-1234567"
+            match = re.search(r'(R-HSA-\d+)', pathway_name)
+            if match:
+                pathway_id = match.group(1)
+                logging.info(f"Extracted Reactome ID: {pathway_id}")
+        elif source == 'kegg':
+            # Format: "hsa00010" or pathway name
+            match = re.search(r'(hsa\d{5})', pathway_name)
+            if match:
+                pathway_id = match.group(1)
+        elif source == 'wikipathways':
+            # Format: "WP530"
+            match = re.search(r'(WP\d+)', pathway_name)
+            if match:
+                pathway_id = match.group(1)
+        
+        # Step 2: Try to get from template manager (bundled or cached)
+        if pathway_id and TEMPLATE_MANAGER:
+            template, source_type = TEMPLATE_MANAGER.get_template(pathway_id, source)
+            if template:
+                logging.info(f"Template loaded from {source_type}: {pathway_id}")
+                
+                # Check if template has actual content (nodes or genes)
+                has_nodes = template.get('nodes') and len(template.get('nodes', [])) > 0
+                has_genes = template.get('genes') and len(template.get('genes', [])) > 0
+                
+                if has_nodes:
+                    # Template has nodes (visual diagram), use it
+                    return {
+                        "status": "ok",
+                        "pathway": template,
+                        "pathway_id": pathway_id,
+                        "pathway_name": template.get('name') or template.get('title', pathway_name),
+                        "source": source,
+                        "from_cache": source_type,
+                        "gene_count": len(template.get('genes', []))
+                    }
+                else:
+                    # Template exists but is empty - will try auto-layout later
+                    logging.warning(f"Template {pathway_id} is empty (no nodes/genes), will try auto-layout")
+                    template = None  # Reset to trigger auto-layout
+        
+        
+        # Step 3: Not in cache - need to download from API
+        logging.info(f"Template not cached, attempting download from {source} API")
+        
+        template = None
+        downloaded_pathway_id = pathway_id
+        
+        if source == 'reactome':
+            template = _download_reactome_pathway(pathway_name, pathway_id, species)
+            if template:
+                downloaded_pathway_id = template.get('id', pathway_id)
+        elif source == 'kegg':
+            # KEGG templates should already be bundled
+            logging.warning(f"KEGG pathway {pathway_id} not found in bundled templates")
+        elif source == 'wikipathways':
+            logging.info("WikiPathways API download not yet implemented")
+        elif source == 'go_bp':
+            # GO BP pathways don't have diagrams
+            return {
+                "status": "info",
+                "message": "GO Biological Process pathways do not have visual diagrams",
+                "suggest_external": f"https://www.ebi.ac.uk/QuickGO/term/{pathway_id or pathway_name}"
+            }
+        
+        # Step 4: If download succeeded, check for content
+        if template and downloaded_pathway_id and TEMPLATE_MANAGER:
+            # Check if downloaded template has actual content (nodes or genes)
+            has_nodes = template.get('nodes') and len(template.get('nodes', [])) > 0
+            has_genes = template.get('genes') and len(template.get('genes', [])) > 0
+            
+            if has_nodes:
+                # Template has nodes (visual diagram), cache and return
+                TEMPLATE_MANAGER.save_to_cache(downloaded_pathway_id, source, template)
+                return {
+                    "status": "ok",
+                    "pathway": template,
+                    "pathway_id": downloaded_pathway_id,
+                    "pathway_name": template.get('name') or template.get('title', pathway_name),
+                    "source": source,
+                    "from_cache": "downloaded",
+                    "gene_count": len(template.get('genes', []))
+                }
+            else:
+                logging.warning(f"Downloaded template {downloaded_pathway_id} is empty, falling through to auto-layout")
+                template = None  # Reset to trigger auto-layout
+        
+        # Step 5: Try to get gene list for auto-layout if no template found
+        resolved_id = downloaded_pathway_id or pathway_id
+        gene_list = None
+        note = "Diagram automatically generated from gene list using STRING PPI interactions."
+        
+        if not template and resolved_id:
+            if source == 'reactome':
+                try:
+                    from reactome.client import ReactomeClient
+                    client = ReactomeClient()
+                    gene_list = client.get_pathway_participants(resolved_id)
+                    
+                    # Also try to get sub-pathways for the "Downstream Suggestion"
+                    pathway_info = client.get_pathway_info(resolved_id)
+                    if pathway_info and pathway_info.get('hasEvent'):
+                        sub_events = pathway_info['hasEvent']
+                        sub_pathways = [e['displayName'] for e in sub_events if e.get('className') == 'Pathway'][:3]
+                        if sub_pathways:
+                            note += f" Potential downstream sub-pathways: {', '.join(sub_pathways)}."
+                except Exception as e:
+                    logging.warning(f"Failed to get gene list/info from Reactome: {e}")
+            elif source == 'kegg':
+                gene_list = _get_kegg_participants(resolved_id)
+            elif source == 'wikipathways':
+                gene_list = _get_wikipathways_participants(resolved_id)
+                
+        # Step 6: Auto-generate diagram if we have gene list
+        if gene_list and len(gene_list) > 0:
+            try:
+                logging.info(f"Generating auto-layout for {len(gene_list)} genes...")
+                from pathway.auto_layout import PathwayAutoLayoutEngine
+                
+                engine = PathwayAutoLayoutEngine(layout_algorithm='force')
+                template = engine.generate_diagram(
+                    genes=gene_list,
+                    pathway_name=pathway_name,
+                    pathway_id=resolved_id,
+                    source=source,
+                    species=species.title()
+                )
+                
+                if template:
+                    # Update note with downstream suggestions
+                    template['metadata']['note'] = note
+                    
+                    # Cache the auto-generated template
+                    if resolved_id and TEMPLATE_MANAGER:
+                        TEMPLATE_MANAGER.save_to_cache(resolved_id, source, template)
+                    
+                    return {
+                        "status": "ok",
+                        "pathway": template,
+                        "pathway_id": resolved_id,
+                        "pathway_name": pathway_name,
+                        "source": source,
+                        "from_cache": "auto_generated",
+                        "gene_count": len(gene_list),
+                        "source_url": template.get('metadata', {}).get('source_url')
+                    }
+            except Exception as e:
+                logging.error(f"Auto-layout generation failed: {e}")
+
+        # Step 7: Everything failed - suggest alternative sources
+        if TEMPLATE_MANAGER:
+            alternatives = TEMPLATE_MANAGER.search_across_sources(pathway_name)
+            if alternatives:
+                suggestions = []
+                for alt_source, pathway_ids in alternatives.items():
+                    suggestions.append(f"{alt_source}: {len(pathway_ids)} matches")
+                
+                return {
+                    "status": "not_found",
+                    "message": f"Pathway not available in {source}",
+                    "alternatives": alternatives,
+                    "suggestion_message": f"Found in other sources: {', '.join(suggestions)}"
+                }
+        
+        # No alternatives found
+        return {
+            "status": "error",
+            "message": f"Pathway '{pathway_name}' not found in {source} and no alternatives available"
+        }
+    
+    except Exception as e:
+        logging.error(f"Search and load pathway failed: {e}")
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
+def _download_reactome_pathway(pathway_name: str, pathway_id: Optional[str], species: str) -> Optional[Dict]:
+    """
+    Download pathway from Reactome API.
+    
+    Returns:
+        Template dict or None if failed
+    """
+    try:
+        from reactome.client import ReactomeClient, convert_reactome_to_template
+        
+        client = ReactomeClient()
+        
+        # If we have ID, use it directly
+        if pathway_id:
+            pathway_info = client.get_pathway_info(pathway_id)
+            
+            # API may return a list
+            if isinstance(pathway_info, list):
+                pathway_info = pathway_info[0] if pathway_info else {}
+            
+            if not pathway_info:
+                return None
+            
+            # Get diagram and genes
+            diagram_data, entity_map = client.get_pathway_diagram(pathway_id)
+            gene_list = client.get_pathway_participants(pathway_id)
+            
+            # Build template
+            pathway_name_display = pathway_info.get('displayName', '') or pathway_info.get('name', pathway_name)
+            species_info = pathway_info.get('species', {})
+            if isinstance(species_info, list):
+                species_info = species_info[0] if species_info else {}
+            species_name = species_info.get('displayName', 'Human') if isinstance(species_info, dict) else 'Human'
+            
+            template = {
+                'id': pathway_id,
+                'name': pathway_name_display,
+                'source': 'reactome',
+                'species': species_name,
+                'nodes': [],
+                'edges': [],
+                'width': 1000,
+                'height': 800,
+                'genes': gene_list if isinstance(gene_list, list) else []
+            }
+            
+            # Add diagram if available
+            if diagram_data and isinstance(diagram_data, dict) and diagram_data.get('nodes'):
+                template = convert_reactome_to_template(diagram_data, entity_map, pathway_info)
+                template['genes'] = gene_list if isinstance(gene_list, list) else []
+            
+            return template
+        
+        # No ID - search by name
+        species_name = 'Homo sapiens' if species == 'human' else species.title()
+        search_results = client.search_pathways(pathway_name, species_name, limit=5)
+        
+        if not search_results:
+            return None
+        
+        # Find best match
+        best_match = None
+        pathway_name_lower = pathway_name.lower()
+        for result in search_results:
+            if pathway_name_lower in result.get('name', '').lower():
+                best_match = result
+                break
+        
+        if not best_match:
+            best_match = search_results[0]
+        
+        # Recursively download using the found ID
+        found_id = best_match.get('stId') or best_match.get('id')
+        return _download_reactome_pathway(pathway_name, found_id, species)
+    
+    except Exception as e:
+        logging.error(f"Failed to download Reactome pathway: {e}")
+        return None
+
+
 if __name__ == "__main__":
     run()
+
+
+
+
+

@@ -203,3 +203,53 @@ def merge_gene_sets(gene_sets_list: List[Dict[str, List[str]]]) -> Dict[str, Lis
                 merged[name] = genes.copy()
     
     return merged
+
+
+def validate_gmt(file_path: str) -> Dict[str, any]:
+    """
+    Validate a GMT file without fully loading it.
+    
+    Args:
+        file_path: Path to GMT file
+        
+    Returns:
+        Dictionary with 'valid' bool and 'error' message if invalid
+    """
+    path = Path(file_path)
+    
+    if not path.exists():
+        return {'valid': False, 'error': f"File not found: {path}"}
+    
+    if not path.suffix.lower() == '.gmt':
+        return {'valid': False, 'error': "File must have .gmt extension"}
+    
+    try:
+        valid_lines = 0
+        with open(path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split('\t')
+                if len(parts) < 3:
+                    return {
+                        'valid': False, 
+                        'error': f"Line {line_num}: Invalid format (need at least 3 tab-separated columns)"
+                    }
+                
+                valid_lines += 1
+                
+                # Quick validation of first 10 lines only
+                if valid_lines >= 10:
+                    break
+        
+        if valid_lines == 0:
+            return {'valid': False, 'error': "No valid gene sets found in file"}
+        
+        return {'valid': True, 'error': None}
+        
+    except UnicodeDecodeError as e:
+        return {'valid': False, 'error': f"File encoding error: {e}. GMT files must be UTF-8 encoded."}
+    except Exception as e:
+        return {'valid': False, 'error': f"Failed to read file: {e}"}

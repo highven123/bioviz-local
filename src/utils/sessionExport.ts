@@ -66,6 +66,30 @@ export async function exportSessionAsMarkdown(analysis: AnalysisSession): Promis
         markdown += `- Downregulated: ${stats.downregulated || 0}\n\n`;
     }
 
+    if (analysis.enrichrResults && analysis.enrichrResults.length > 0) {
+        markdown += `## Enrichment Analysis (ORA)\n\n`;
+        markdown += `| Term | Adj. P-value | Overlap |\n`;
+        markdown += `| :--- | :--- | :--- |\n`;
+        analysis.enrichrResults.slice(0, 10).forEach((res: any) => {
+            markdown += `| ${res.term} | ${res.adjusted_p_value.toExponential(2)} | ${res.overlap} |\n`;
+        });
+        markdown += `\n`;
+    }
+
+    if (analysis.gseaResults && (analysis.gseaResults.up.length > 0 || analysis.gseaResults.down.length > 0)) {
+        markdown += `## GSEA Results\n\n`;
+        markdown += `| Term | NES | FDR | Status |\n`;
+        markdown += `| :--- | :--- | :--- | :--- |\n`;
+        const allGsea = [
+            ...analysis.gseaResults.up.slice(0, 5).map((r: any) => ({ ...r, status: 'UP' })),
+            ...analysis.gseaResults.down.slice(0, 5).map((r: any) => ({ ...r, status: 'DOWN' }))
+        ];
+        allGsea.forEach(res => {
+            markdown += `| ${res.term} | ${res.nes.toFixed(2)} | ${res.fdr.toExponential(2)} | ${res.status} |\n`;
+        });
+        markdown += `\n`;
+    }
+
     if (analysis.chatHistory && analysis.chatHistory.length > 0) {
         markdown += `## AI Conversation\n\n`;
         analysis.chatHistory.forEach(msg => {

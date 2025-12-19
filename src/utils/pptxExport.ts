@@ -22,6 +22,17 @@ export interface PathwayExportData {
         color: string;
         expression?: number;
     }>;
+    enrichmentResults?: Array<{
+        term: string;
+        p_value: number;
+        adjusted_p_value: number;
+        overlap: string;
+        combined_score: number;
+    }>;
+    gseaResults?: {
+        up_regulated?: Array<{ term: string; nes: number; p_value: number; fdr: number }>;
+        down_regulated?: Array<{ term: string; nes: number; p_value: number; fdr: number }>;
+    };
 }
 
 /**
@@ -210,6 +221,78 @@ export async function exportPathwayToPPTX(data: PathwayExportData): Promise<stri
             fontSize: 14,
             border: { type: 'solid', pt: 1, color: '2A2A3A' },
             valign: 'middle'
+        });
+    }
+
+    // Slide 5: Enrichment Analysis (ORA)
+    if (data.enrichmentResults && data.enrichmentResults.length > 0) {
+        const oraSlide = pptx.addSlide();
+        oraSlide.background = { color: '0A0A0F' };
+
+        oraSlide.addText('Enrichment Analysis (ORA)', {
+            x: 0.5, y: 0.5, w: 9, h: 0.6, fontSize: 28, bold: true, color: 'E5E7EB'
+        });
+
+        const oraTableData: any[][] = [
+            [
+                { text: 'Term', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'P-value', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'Adj. P-value', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'Overlap', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } }
+            ]
+        ];
+
+        data.enrichmentResults.slice(0, 10).forEach(res => {
+            oraTableData.push([
+                { text: res.term, options: { color: 'E5E7EB', fontSize: 12 } },
+                { text: res.p_value.toExponential(2), options: { color: 'E5E7EB', fontSize: 12 } },
+                { text: res.adjusted_p_value.toExponential(2), options: { color: '6366F1', bold: true, fontSize: 12 } },
+                { text: res.overlap, options: { color: '9CA3AF', fontSize: 12 } }
+            ]);
+        });
+
+        oraSlide.addTable(oraTableData, {
+            x: 0.5, y: 1.3, w: 9, fontSize: 12,
+            border: { type: 'solid', pt: 1, color: '2A2A3A' }
+        });
+    }
+
+    // Slide 6: GSEA Results
+    if (data.gseaResults && (data.gseaResults.up_regulated?.length || data.gseaResults.down_regulated?.length)) {
+        const gseaSlide = pptx.addSlide();
+        gseaSlide.background = { color: '0A0A0F' };
+
+        gseaSlide.addText('Gene Set Enrichment Analysis (GSEA)', {
+            x: 0.5, y: 0.5, w: 9, h: 0.6, fontSize: 28, bold: true, color: 'E5E7EB'
+        });
+
+        const gseaTableData: any[][] = [
+            [
+                { text: 'Term', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'NES', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'P-value', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } },
+                { text: 'FDR', options: { bold: true, color: 'E5E7EB', fill: '1A1A24' } }
+            ]
+        ];
+
+        const allGsea = [
+            ...(data.gseaResults.up_regulated || []).map(r => ({ ...r, status: 'UP' })),
+            ...(data.gseaResults.down_regulated || []).map(r => ({ ...r, status: 'DOWN' }))
+        ].sort((a, b) => Math.abs(b.nes) - Math.abs(a.nes)).slice(0, 10);
+
+        allGsea.forEach(res => {
+            const color = res.status === 'UP' ? 'EF4444' : '3B82F6';
+            gseaTableData.push([
+                { text: res.term, options: { color: 'E5E7EB', fontSize: 11 } },
+                { text: res.nes.toFixed(2), options: { color, bold: true, fontSize: 11 } },
+                { text: res.p_value.toExponential(2), options: { color: 'E5E7EB', fontSize: 11 } },
+                { text: res.fdr.toExponential(2), options: { color, fontSize: 11 } }
+            ]);
+        });
+
+        gseaSlide.addTable(gseaTableData, {
+            x: 0.5, y: 1.3, w: 9, fontSize: 11,
+            border: { type: 'solid', pt: 1, color: '2A2A3A' }
         });
     }
 

@@ -163,10 +163,10 @@ def _normalize_enriched_terms(enrichment_data: Any) -> List[Dict[str, Any]]:
     for term in terms:
         if not isinstance(term, dict):
             continue
-        name = term.get("term") or term.get("name") or term.get("pathway") or term.get("id") or "unknown"
+        name = term.get("term") or term.get("name") or term.get("pathway_name") or term.get("pathway") or term.get("pathway_id") or term.get("id") or "unknown"
         pval = _to_float(term.get("p_value") or term.get("pvalue") or term.get("p") or term.get("NOM p-val"))
         fdr = _to_float(term.get("adjusted_p_value") or term.get("fdr") or term.get("q_value") or term.get("FDR q-val"))
-        genes_raw = term.get("genes") or term.get("overlap") or term.get("leadingEdge")
+        genes_raw = term.get("genes") or term.get("hit_genes") or term.get("overlap") or term.get("leadingEdge")
         if isinstance(genes_raw, str):
             genes = [g.strip() for g in genes_raw.replace(";", ",").split(",") if g.strip()]
         elif isinstance(genes_raw, list):
