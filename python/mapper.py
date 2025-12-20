@@ -12,6 +12,7 @@ from pathlib import Path
 def load_pathway_template(pathway_id: str) -> Optional[Dict]:
     """
     Load a KEGG pathway template from assets/templates/
+    If not found locally, automatically download from KEGG and cache it.
     
     Args:
         pathway_id: KEGG pathway ID (e.g., 'hsa04210', 'hsa04115', 'hsa04110')
@@ -20,8 +21,8 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
         Pathway template dict or None if not found
     """
     import sys
+    import logging
     
-    # Try multiple possible locations
     # Try multiple possible locations
     search_paths = []
     
@@ -29,9 +30,12 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
     if hasattr(sys, '_MEIPASS'):
          search_paths.append(Path(sys._MEIPASS) / 'assets' / 'templates' / f'{pathway_id}.json')
 
+    # User-writable custom templates directory (highest priority for caching)
+    user_template_dir = Path.home() / '.bioviz_local' / 'templates'
+    user_template_path = user_template_dir / f'{pathway_id}.json'
+    
     search_paths.extend([
-        # User-writable custom templates
-        Path.home() / '.bioviz_local' / 'templates' / f'{pathway_id}.json',
+        user_template_path,
         # Development: relative to this file
         Path(__file__).parent.parent / 'assets' / 'templates' / f'{pathway_id}.json',
         # Packaged app: relative to executable
@@ -44,21 +48,107 @@ def load_pathway_template(pathway_id: str) -> Optional[Dict]:
         Path.cwd() / 'assets' / 'templates' / f'{pathway_id}.json',
         # Alternative: parent of CWD (if running from src-tauri)
         Path.cwd().parent / 'assets' / 'templates' / f'{pathway_id}.json',
-        # Alternative: absolute path fallback (for dev)
-        Path('/Users/haifeng/BioViz-Local/assets/templates') / f'{pathway_id}.json',
     ])
     
+    # Try to load from existing locations
     for template_path in search_paths:
         if template_path.exists():
-            with open(template_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            try:
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    logging.info(f"[TEMPLATE] Loaded {pathway_id} from {template_path}")
+                    return json.load(f)
+            except Exception as e:
+                logging.warning(f"[TEMPLATE] Failed to read {template_path}: {e}")
+                continue
     
-    # If not found, try to provide helpful debug info
-    print(f"[DEBUG] Failed to find {pathway_id}.json in any of these locations:")
-    for p in search_paths:
-        print(f"  - {p} (exists: {p.exists()})")
+    # Not found locally - try to download from KEGG
+    logging.info(f"[TEMPLATE] {pathway_id} not found locally, attempting auto-download from KEGG...")
     
-    return None
+    try:
+        # Import download function (defined in bio_core.py)
+        # We need to be careful about circular imports
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        
+        # Step 1: Download KGML from KEGG
+        kgml_url = f'http://rest.kegg.jp/get/{pathway_id}/kgml'
+        logging.info(f"[TEMPLATE] Downloading from {kgml_url}")
+        
+        headers = {'User-Agent': 'BioViz/1.0 (Educational/Research)'}
+        req = urllib.request.Request(kgml_url, headers=headers)
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            kgml_content = response.read().decode('utf-8')
+        
+        if not kgml_content or kgml_content.startswith('<!DOCTYPE'):
+            logging.error(f"[TEMPLATE] Failed to download {pathway_id}: Invalid response")
+            return None
+        
+        # Step 2: Parse KGML to JSON (simplified inline version)
+        root = ET.fromstring(kgml_content)
+        
+        template = {
+            'id': pathway_id,
+            'name': root.get('title', pathway_id),
+            'nodes': [],
+            'edges': [],
+            'width': int(root.get('image_width', 800)),
+            'height': int(root.get('image_height', 600))
+        }
+        
+        # Parse entries (nodes)
+        for entry in root.findall('entry'):
+            entry_id = entry.get('id')
+            entry_type = entry.get('type')
+            names = entry.get('name', '').split()
+            
+            # Get graphics info
+            graphics = entry.find('graphics')
+            if graphics is not None:
+                node = {
+                    'id': entry_id,
+                    'name': graphics.get('name', ''),
+                    'type': entry_type,
+                    'x': float(graphics.get('x', 0)),
+                    'y': float(graphics.get('y', 0)),
+                    'width': float(graphics.get('width', 46)),
+                    'height': float(graphics.get('height', 17)),
+                    'fgcolor': graphics.get('fgcolor', '#000000'),
+                    'bgcolor': graphics.get('bgcolor', '#BFBFFF'),
+                    'genes': names  # KEGG gene IDs
+                }
+                template['nodes'].append(node)
+        
+        # Parse relations (edges)
+        for relation in root.findall('relation'):
+            edge = {
+                'from': relation.get('entry1'),
+                'to': relation.get('entry2'),
+                'type': relation.get('type', 'unknown')
+            }
+            template['edges'].append(edge)
+        
+        # Step 3: Cache to user directory for future use
+        user_template_dir.mkdir(parents=True, exist_ok=True)
+        with open(user_template_path, 'w', encoding='utf-8') as f:
+            json.dump(template, f, indent=2)
+        
+        logging.info(f"[TEMPLATE] Successfully downloaded and cached {pathway_id} to {user_template_path}")
+        print(f"✓ Downloaded pathway template: {pathway_id} → {template['name']}", file=sys.stderr)
+        
+        return template
+        
+    except Exception as e:
+        logging.error(f"[TEMPLATE] Auto-download failed for {pathway_id}: {e}")
+        print(f"✗ Failed to auto-download {pathway_id}: {e}", file=sys.stderr)
+        
+        # If download fails, provide helpful debug info
+        print(f"[DEBUG] Failed to find {pathway_id}.json in any of these locations:", file=sys.stderr)
+        for p in search_paths[:5]:  # Show first 5 paths only
+            print(f"  - {p} (exists: {p.exists()})", file=sys.stderr)
+        
+        return None
+
 
 
 

@@ -4,6 +4,31 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+# ==================================================================================
+# CRITICAL FIX FOR PACKAGED APP IPC
+# Force stdout/stderr to be unbuffered IMMEDIATELY before any imports/logging
+# ==================================================================================
+if sys.platform != 'win32':
+    try:
+        # STDIN MUST BE UNBUFFERED/LINE-BUFFERED TOO!
+        sys.stdin.reconfigure(line_buffering=True)
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass # Python < 3.7
+
+print(">>> [BioEngine] BOOTSTRAP VERIFICATION (FINAL 4 - DEBUG CMD) <<<", file=sys.stderr, flush=True)
+
+
+# Force PyInstaller to include these for pkg_resources compatibility
+try:
+    import pkg_resources
+    import jaraco.text
+    import jaraco.functools
+    import jaraco.context
+except ImportError:
+    pass
+
 # Setup file logging for packaged app
 def setup_logging():
     """Setup file logging to user's home directory."""
@@ -30,68 +55,26 @@ def setup_logging():
 setup_logging()
 
 
-def load_source_bio_core() -> object:
-    """Load bio_core.py from source even if a compiled extension exists."""
-    import importlib.util
-
-    # In packaged app, bio_core.py is in same directory as bio_engine
-    bio_core_path = Path(__file__).with_name("bio_core.py")
-    
-    # Also check PyInstaller _MEIPASS directory
-    if hasattr(sys, '_MEIPASS'):
-        meipass_path = Path(sys._MEIPASS) / "bio_core.py"
-        if meipass_path.exists():
-            bio_core_path = meipass_path
-            logging.info(f"Using PyInstaller bundled path: {bio_core_path}")
-    
-    logging.info(f"Loading bio_core from: {bio_core_path}")
-    
-    if not bio_core_path.exists():
-        raise ImportError(f"bio_core.py not found at {bio_core_path}")
-    
-    spec = importlib.util.spec_from_file_location("bio_core_src", bio_core_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Failed to create module spec for {bio_core_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    logging.info("bio_core loaded from source successfully")
-    return module
-
-
 # Check if running in packaged app (PyInstaller)
 is_packaged = hasattr(sys, '_MEIPASS')
 
-# In packaged app, ALWAYS use source to ensure we have latest code with logging
-if is_packaged:
-    logging.info(f"Running in packaged app (_MEIPASS={sys._MEIPASS})")
+try:
+    # Direct import is the most reliable way for PyInstaller
+    # It ensures we use the version bundled in the PYZ archive
+    import bio_core
+    logging.info("bio_core imported successfully")
+except ImportError as e:
+    logging.error(f"Failed to import bio_core: {e}")
+    # Try adding current directory to path just in case
+    sys.path.append(os.getcwd())
     try:
-        bio_core = load_source_bio_core()
-    except ImportError as e:
-        logging.error(f"Failed to load bio_core from source: {e}")
-        logging.info("Falling back to compiled import")
-        import bio_core  # type: ignore
-else:
-    # Development mode: try compiled first, then source
-    use_source = os.environ.get("BIOVIZ_USE_SOURCE") in ("1", "true", "TRUE", "yes", "YES")
+        import bio_core
+        logging.info("bio_core imported successfully after path fix")
+    except ImportError as e2:
+        logging.error(f"FATAL: Failed to import bio_core even after path fix: {e2}")
+        print(f"FATAL: Failed to import bio_core: {e2}", file=sys.stderr)
+        sys.exit(1)
 
-    try:
-        if use_source:
-            logging.info("Loading bio_core from source (BIOVIZ_USE_SOURCE set)")
-            bio_core = load_source_bio_core()
-        else:
-            # Try importing as a compiled module first (so/pyd)
-            logging.info("Trying to import compiled bio_core module")
-            import bio_core  # type: ignore
-            logging.info("Compiled bio_core imported successfully")
-    except ImportError as e:
-        logging.warning(f"Compiled import failed: {e}, falling back to source")
-        # Fallback to source (useful for development)
-        try:
-            bio_core = load_source_bio_core()
-        except ImportError as e2:
-            logging.error(f"Failed to import bio_core: {e2}")
-            print(f"Failed to import bio_core: {e2}", file=sys.stderr)
-            sys.exit(1)
 
 if __name__ == "__main__":
     try:
@@ -112,4 +95,3 @@ if __name__ == "__main__":
         sys.exit(1)
     finally:
         logging.info("=== BioViz Engine Exiting ===")
-

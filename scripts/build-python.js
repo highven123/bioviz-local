@@ -20,6 +20,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const PYTHON_DIR = path.join(ROOT_DIR, 'python');
 const BINARIES_DIR = path.join(ROOT_DIR, 'src-tauri', 'binaries');
 const PYTHON_ENTRY = path.join(PYTHON_DIR, 'bio_engine.py');
+const PYTHON_CMD = process.platform === 'win32' ? 'python' : 'python3';
 
 /**
  * Get the target triple from rustc
@@ -112,6 +113,22 @@ function formatSize(bytes) {
 }
 
 /**
+ * Rebuild the Cythonized core so PyInstaller never bundles a stale .so
+ */
+function rebuildCythonCore() {
+    console.log('[build-python] Rebuilding bio_core (Cython) ...');
+    try {
+        execSync(`${PYTHON_CMD} setup.py build_ext --inplace`, {
+            cwd: PYTHON_DIR,
+            stdio: 'inherit',
+        });
+    } catch (error) {
+        console.error('[build-python] Failed to rebuild bio_core:', error.message);
+        process.exit(1);
+    }
+}
+
+/**
  * Run PyInstaller with aggressive exclusions
  */
 function buildPython() {
@@ -135,8 +152,10 @@ function buildPython() {
 
         // Hidden imports needed for pkg_resources/setuptools vendored packages
         const hiddenImports = [
-            'jaraco', 'jaraco.text', 'jaraco.functools', 'jaraco.context',
-            'platformdirs', 'tomli', 'email', 'calendar'
+            'setuptools', 'pkg_resources',
+            'jaraco.text', 'jaraco.functools', 'jaraco.context',
+            'platformdirs', 'tomli', 'email', 'calendar',
+            'secrets', 'gseapy', 'scipy', 'pandas', 'numpy'
         ];
         const hiddenImportArgs = hiddenImports.map(mod => `--hidden-import ${mod}`).join(' ');
 
@@ -148,6 +167,14 @@ function buildPython() {
             '--onefile',
             '--clean',
             '--strip',  // Strip debug symbols (Unix only, ignored on Windows)
+            '--collect-all jaraco.text',
+            '--collect-all jaraco.functools',
+            '--collect-all jaraco.context',
+            '--collect-all setuptools',
+            '--collect-all scipy',
+            '--collect-all pandas',
+            '--collect-all numpy',
+            '--collect-all gseapy',
             addDataArg,
             excludeArgs,
             hiddenImportArgs,
@@ -213,10 +240,10 @@ function moveAndRenameBinary(targetTriple) {
     // Report success/failure
     if (parseFloat(sizeMB) < 60) {
         console.log('✅ PERFECT! Binary is under 60MB (神级优化)');
-    } else if (parseFloat(sizeMB) < 100) {
-        console.log('✅ EXCELLENT! Binary is under 100MB (完全可接受)');
+    } else if (parseFloat(sizeMB) < 200) {
+        console.log('✅ EXCELLENT! Binary is under 200MB (完全可接受)');
     } else {
-        console.log('❌ FAILED! Binary is over 100MB');
+        console.log('❌ FAILED! Binary is over 200MB');
         console.log('   Check if pandas/numpy were accidentally installed');
         process.exit(1);
     }
@@ -254,6 +281,7 @@ function main() {
     console.log('='.repeat(60));
 
     const targetTriple = getTargetTriple();
+    rebuildCythonCore(); // Ensure bio_core.cpython-*.so matches latest source
     buildPython();
     moveAndRenameBinary(targetTriple);
     cleanup();

@@ -1,10 +1,11 @@
-import { forwardRef, useImperativeHandle, useRef, useMemo } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useMemo, useEffect, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
 import PptxGenJS from 'pptxgenjs';
 import './PathwayVisualizer.css';
+import { useGeneAnnotations } from '../hooks/useGeneAnnotations';
 
 // Helper for dynamic terminology
 const getTerm = (type: string | undefined, key: string): string => {
@@ -109,19 +110,68 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
     const bgColor = isDark ? '#1a1a24' : '#ffffff';
     const chartRef = useRef<ReactECharts>(null);
 
+    const geneKeys = useMemo(() => {
+        return Array.from(new Set(
+            nodes
+                .map(n => (n.hit_name || n.name || '').split(',')[0].trim())
+                .filter(Boolean)
+        ));
+    }, [nodes]);
+
+    const { annotations, touch } = useGeneAnnotations(geneKeys);
+
+    const resolveGeneKey = useCallback((paramsData: any) => {
+        const raw = (paramsData && (paramsData.hit_name || paramsData.id || paramsData.name)) || '';
+        return raw.split(',')[0].trim();
+    }, []);
+
+    const wrapLines = useCallback((text: string, width = 100) => {
+        if (!text) return '';
+        const words = text.split(/\s+/);
+        const lines: string[] = [];
+        let current = '';
+
+        words.forEach((w) => {
+            if ((current + ' ' + w).trim().length > width) {
+                lines.push(current.trim());
+                current = w;
+            } else {
+                current = current ? `${current} ${w}` : w;
+            }
+        });
+        if (current) lines.push(current.trim());
+        return lines.join('<br/>');
+    }, []);
+
+    useEffect(() => {
+        const chart = chartRef.current?.getEchartsInstance();
+        if (!chart) return;
+
+        const handler = (params: any) => {
+            if (params?.dataType === 'node') {
+                const g = resolveGeneKey(params.data);
+                if (g) {
+                    touch(g);
+                }
+            }
+        };
+
+        chart.on('mouseover', handler);
+        return () => {
+            chart.off('mouseover', handler);
+        };
+    }, [resolveGeneKey, touch]);
+
     // Custom Click Handler
     const onChartClick = (params: any) => {
         if (params.dataType === 'node') {
             if (!onNodeClick) return;
 
-            // Prefer using template node id (usually gene symbol),
-            // if no id, fall back to name, and handle comma-separated multi-gene cases.
-            const raw = (params.data && (params.data.hit_name || params.data.id || params.data.name)) || params.name;
-            if (!raw) return;
-            const primary = String(raw).split(',')[0].trim();
+            const primary = resolveGeneKey(params.data) || params.name;
             if (!primary) return;
 
             onNodeClick(primary);
+            touch(primary);
         }
     };
 
@@ -275,11 +325,25 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                         const showId = idIsString && !rawId.toLowerCase().startsWith('hsa');
                         const idLine = showId ? `ID: ${rawId}<br/>` : '';
 
+                        const geneKey = resolveGeneKey(params.data);
+                        const ann = geneKey ? annotations[geneKey] : undefined;
+                        const wrappedSummary = ann?.summary ? wrapLines(ann.summary, 100) : '';
+                        const annoSummary = wrappedSummary ? `<div style="margin-top:6px; line-height:1.4;">${wrappedSummary}</div>` : '';
+                        const drugLine = ann?.drugs && ann.drugs.length > 0
+                            ? `<div style="margin-top:4px;"><b>Drugs:</b> ${ann.drugs.slice(0, 3).join(', ')}${ann.drugs.length > 3 ? '...' : ''}</div>`
+                            : '';
+                        const diseaseLine = ann?.diseases && ann.diseases.length > 0
+                            ? `<div style="margin-top:2px;"><b>Disease:</b> ${ann.diseases.slice(0, 3).join(', ')}${ann.diseases.length > 3 ? '...' : ''}</div>`
+                            : '';
+
                         return `
             <div style="text-align: left;">
               <b>${params.name}</b><br/>
               Expression (LogFC): ${valStr}<br/>
               ${idLine}
+              ${annoSummary}
+              ${drugLine}
+              ${diseaseLine}
             </div>
           `;
                     }
@@ -479,6 +543,15 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                 borderColor: isDark ? '#333' : '#ddd',
                 textStyle: {
                     color: textColor
+                },
+                position: (point: number[], _params: any, dom: HTMLElement, rect: any) => {
+                    // Anchor tooltip below the bubble center
+                    if (rect) {
+                        const x = rect.x + rect.width / 2 - (dom?.clientWidth || 0) / 2;
+                        const y = rect.y + rect.height + 10;
+                        return [x, y];
+                    }
+                    return point;
                 }
             },
             graphic: legendGraphic,
@@ -500,7 +573,7 @@ export const PathwayVisualizer = forwardRef<PathwayVisualizerRef, PathwayVisuali
                 }
             ]
         } as EChartsOption;
-    }, [nodes, edges, title, isDark, textColor, selectedNodeNames]);
+    }, [nodes, edges, title, isDark, textColor, selectedNodeNames, annotations, resolveGeneKey]);
 
     const handleResetView = () => {
         const chart = chartRef.current?.getEchartsInstance();

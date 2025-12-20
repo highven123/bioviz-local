@@ -37,6 +37,11 @@ interface DataImportWizardProps {
     onStepChange?: (step: 1 | 2) => void;
     /** Pass current config (if ready) back to parent component, for triggering analysis from top Step4 */
     onConfigPreview?: (config: AnalysisConfig | null) => void;
+    /** One-click demo loader */
+    onLoadDemo?: () => void;
+    /** Optional demo script preview (Markdown plain text) */
+    demoScript?: string;
+    demoTitle?: string;
 }
 
 interface UploadedFileInfo {
@@ -72,6 +77,22 @@ const loadLastConfig = (): AnalysisConfig | null => {
             parsed.filePaths = [parsed.filePath];
         }
         if (!parsed || !Array.isArray(parsed.filePaths) || parsed.filePaths.length === 0) return null;
+
+        // Fix: Convert empty pathwayId to undefined (from old configs)
+        if (parsed.pathwayId === '') {
+            console.warn('[BioViz] Auto-fixing old config: empty pathwayId -> undefined');
+            parsed.pathwayId = undefined;
+            // Persist the fix so we don't hit this again
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    ...parsed,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                console.warn('Failed to persist config fix:', e);
+            }
+        }
+
         return parsed as AnalysisConfig;
     } catch (e) {
         console.warn("Failed to load last config:", e);
@@ -83,11 +104,16 @@ const loadLastConfig = (): AnalysisConfig | null => {
 
 export const DataImportWizard: React.FC<DataImportWizardProps> = ({
     onComplete,
+    onCancel,
     addLog,
+    isConnected,
     sendCommand,
     activeStep,
     onStepChange,
-    onConfigPreview
+    onConfigPreview,
+    onLoadDemo,
+    demoScript,
+    demoTitle
 }) => {
     const [step, setStep] = useState<1 | 2>(activeStep ?? 1);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFileInfo[] | null>(null);
@@ -355,12 +381,13 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
         const config: AnalysisConfig = {
             filePaths: uploadedFiles.map(f => f.path),
             mapping: mappingPayload,
-            pathwayId: '', // Empty for now, will be selected in Viz
+            pathwayId: undefined, // Will be selected later in Step 3
             dataType: primary.dataType,
             analysisMethods,
         };
 
         saveConfig(config);
+        addLog('✓ Column mapping complete. Ready to visualize.');
         onComplete(config);
     };
 
@@ -371,6 +398,12 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
             {/* Wizard Header / Stepper */}
             <div className="wizard-header">
                 <h2 className="wizard-title">New Analysis</h2>
+                <div className="wizard-actions">
+                    <span className={`conn-pill ${isConnected ? 'ok' : 'warn'}`}>
+                        {isConnected ? 'Engine ready' : 'Engine offline'}
+                    </span>
+                    <button className="cancel-btn" onClick={onCancel}>✕</button>
+                </div>
                 <div className="wizard-steps">
                     <div className={`step-indicator ${step >= 1 ? 'active' : ''}`}>1. Import</div>
                     <div className={`step-indicator ${step >= 2 ? 'active' : ''}`}>2. Map</div>
@@ -399,9 +432,43 @@ export const DataImportWizard: React.FC<DataImportWizardProps> = ({
                                 <button onClick={handleQuickLoad} className="btn-quick-load">
                                     <span>⚡</span> Load Last Config
                                     <span style={{ fontSize: '11px', opacity: 0.6 }}>
-                                        ({lastConfig?.pathwayId} • {lastConfig?.mapping.gene} vs {lastConfig?.mapping.value})
+                                        ({lastConfig?.pathwayId || 'No pathway'} • {lastConfig?.mapping.gene} vs {lastConfig?.mapping.value})
                                     </span>
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Clear saved configuration?')) {
+                                            localStorage.removeItem(STORAGE_KEY);
+                                            addLog('✓ Configuration cache cleared');
+                                            window.location.reload();
+                                        }
+                                    }}
+                                    className="btn-quick-load"
+                                    style={{
+                                        background: 'rgba(220, 38, 38, 0.1)',
+                                        borderColor: 'rgba(220, 38, 38, 0.3)',
+                                        marginLeft: '8px'
+                                    }}
+                                >
+                                    <span>🗑️</span> Clear Config
+                                </button>
+                            </div>
+                        )}
+
+                        {onLoadDemo && (
+                            <div className="demo-section">
+                                <button className="demo-btn" onClick={onLoadDemo}>
+                                    🎬 Load Demo Session
+                                    <span className="demo-subtitle">{demoTitle || 'Glycolysis timecourse (sample)'}</span>
+                                </button>
+                                {demoScript && (
+                                    <div className="demo-script">
+                                        <div className="demo-script-title">Demo flow</div>
+                                        {demoScript.split('\n').filter(Boolean).slice(0, 4).map((line, idx) => (
+                                            <div key={idx} className="demo-script-line">• {line}</div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

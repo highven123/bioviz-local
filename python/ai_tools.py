@@ -16,6 +16,7 @@ from prompts import (
     VISUALIZATION_PROMPT,
     HYPOTHESIS_PROMPT,
     PATTERN_DISCOVERY_PROMPT,
+    STUDIO_INSIGHTS_PROMPT,
     render_prompt,
 )
 
@@ -63,41 +64,62 @@ def _get_llm_client_and_model() -> Tuple[Any, str]:
     Create an OpenAI-compatible client based on environment configuration.
     Mirrors ai_core.py to keep provider selection consistent.
     """
+    import sys
+    import logging
     from openai import OpenAI
+    import httpx
 
-    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    def _get_env_clean(key: str, default: str = "") -> str:
+        val = os.getenv(key, default)
+        if val:
+            val = val.strip().strip("'").strip('"')
+        return val
+
+    provider = _get_env_clean("AI_PROVIDER", "ollama").lower()
+    logging.info(f"[AI Tools] Initializing structured LLM client for provider: {provider}")
+
+    # For local or Chinese providers, we usually want to bypass system proxies
+    # that might be set for international access but break local connections.
+    no_proxy_client = httpx.Client(trust_env=False, timeout=120.0)
+    
+    # For international providers, use default httpx client (which respects env proxies)
+    default_client = httpx.Client(trust_env=True, timeout=120.0)
 
     if provider == "bailian":
-        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or "sk-placeholder"
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v3.2-exp")
-        client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", timeout=120.0)
+        api_key = _get_env_clean("DEEPSEEK_API_KEY") or _get_env_clean("DASHSCOPE_API_KEY") or "sk-placeholder"
+        model = _get_env_clean("DEEPSEEK_MODEL", "deepseek-v3")
+        # Bailian is in China, bypass proxy to avoid interference
+        client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", http_client=no_proxy_client)
         return client, model
 
     if provider == "deepseek":
-        api_key = os.getenv("DEEPSEEK_API_KEY") or "sk-placeholder"
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v3.2-exp")
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        api_key = _get_env_clean("DEEPSEEK_API_KEY") or "sk-placeholder"
+        model = _get_env_clean("DEEPSEEK_MODEL", "deepseek-chat")
+        # DeepSeek is in China, bypass proxy
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com", http_client=no_proxy_client)
         return client, model
 
     if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = _get_env_clean("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set")
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        client = OpenAI(api_key=api_key)
+        model = _get_env_clean("OPENAI_MODEL", "gpt-4o-mini")
+        # OpenAI is international, use default client (respects proxies)
+        client = OpenAI(api_key=api_key, http_client=default_client)
         return client, model
 
     if provider == "ollama":
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        model = os.getenv("OLLAMA_MODEL", "llama3")
-        client = OpenAI(api_key="ollama", base_url=base_url)
+        base_url = _get_env_clean("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        model = _get_env_clean("OLLAMA_MODEL", "llama3")
+        # Ollama is local, bypass proxy
+        client = OpenAI(api_key="ollama", base_url=base_url, http_client=no_proxy_client)
         return client, model
 
     # Custom fallback
-    api_key = os.getenv("CUSTOM_API_KEY", "placeholder")
-    base_url = os.getenv("CUSTOM_BASE_URL", "http://localhost:11434/v1")
-    model = os.getenv("CUSTOM_MODEL", "gpt-3.5-turbo")
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    api_key = _get_env_clean("CUSTOM_API_KEY", "placeholder")
+    base_url = _get_env_clean("CUSTOM_BASE_URL", "http://localhost:11434/v1")
+    model = _get_env_clean("CUSTOM_MODEL", "gpt-3.5-turbo")
+    client = OpenAI(api_key=api_key, base_url=base_url, http_client=default_client)
     return client, model
 
 
@@ -529,6 +551,7 @@ def generate_hypothesis(
     }
 
 
+
 def discover_patterns(expression_matrix: Any) -> Dict[str, Any]:
     """Exploratory pattern discovery for Phase 3."""
     if not expression_matrix:
@@ -546,6 +569,50 @@ def discover_patterns(expression_matrix: Any) -> Dict[str, Any]:
         return {"status": "error", "message": f"LLM error: {error or 'empty response'}"}
 
     return {"status": "ok", "summary": content, "model": model}
+
+
+def summarize_studio_intelligence(intelligence_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    [Phase 6] Generate a 'Super Narrative' by synthesizing all 7 analytical layers.
+    This provides the cohesive executive summary for the Intelligence Dashboard.
+    """
+    if not intelligence_data:
+        return {"status": "error", "message": "No intelligence data provided"}
+
+    # Extract core layers for synthesis
+    # Handle both direct layers or nested under 'intelligence_data'
+    if "intelligence_data" in intelligence_data:
+        root = intelligence_data["intelligence_data"]
+    else:
+        root = intelligence_data
+
+    layers = root.get("layers", {})
+    summary = root.get("summary", "Standard overview")
+    drivers = root.get("drivers", [])
+
+    payload = {
+        "multi_omics": layers.get("multi_omics", {}),
+        "temporal": layers.get("temporal", {}),
+        "druggability": layers.get("druggability", {}),
+        "topology": layers.get("topology", {}),
+        "qc": layers.get("qc", {}),
+        "lab": layers.get("lab", {}),
+        "knowledge_hub": layers.get("rag_hints", {}),
+        "summary_stats": summary,
+        "key_drivers": drivers[:20] if isinstance(drivers, list) else []
+    }
+
+    prompt = render_prompt(STUDIO_INSIGHTS_PROMPT, payload)
+    content, model, error = _invoke_structured_prompt(prompt, temperature=0.3, max_tokens=1500)
+
+    if error or not content:
+        return {"status": "error", "message": f"LLM error: {error or 'empty response'}"}
+
+    return {
+        "status": "ok",
+        "super_narrative": content,
+        "model": model
+    }
 
 
 # --- Yellow Zone Tools (Require Confirmation) ---
@@ -693,6 +760,23 @@ TOOLS: List[ToolDefinition] = [
         },
         safety_level=SafetyLevel.GREEN,
         handler=_run_enrichment
+    ),
+
+    ToolDefinition(
+        name="summarize_studio_intelligence",
+        description="Synthesize the 7 analytical layers into a cohesive 'Super Narrative'. Use this for full-width BioViz Studio reports.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "intelligence_data": {
+                    "type": "object",
+                    "description": "The complete 7-layer intelligence report object."
+                }
+            },
+            "required": ["intelligence_data"]
+        },
+        safety_level=SafetyLevel.GREEN,
+        handler=summarize_studio_intelligence
     ),
     
     # Yellow Zone - Requires confirmation

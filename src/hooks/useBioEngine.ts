@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AIActionResponse, isProposal } from '../types/aiSafety';
+import { eventBus, BioVizEvents } from '../stores/eventBus';
 
 /** Response structure from the Python sidecar */
 export interface SidecarResponse {
@@ -196,6 +197,10 @@ export function useBioEngine(): UseBioEngineReturn {
                 }
 
                 console.error('[BioViz] Sidecar error:', payload);
+                eventBus.emit(BioVizEvents.AI_WARNING, {
+                    title: 'Engine Error',
+                    message: text || (typeof payload === 'string' ? payload : String(payload))
+                });
                 setError(text || (typeof payload === 'string' ? payload : String(payload)));
             });
 
@@ -275,6 +280,7 @@ export function useBioEngine(): UseBioEngineReturn {
                     if (upper === 'LOAD') return 600_000;
                     if (upper === 'DOWNLOAD_PATHWAY') return 120_000;
                     if (upper === 'SEARCH_PATHWAY') return 30_000;
+                    if (upper === 'AI_INTERPRET_STUDIO') return 180_000; // 3 mins for synthesis
                     return 60_000;
                 })();
 

@@ -96,6 +96,7 @@ Output sections:
 - Evidence: bullet list tying pathways/genes to the hypothesis with provided stats.
 - Suggested validation: brief experimental checks (e.g., qPCR, perturbation).
 - Caveats: note data gaps or assumptions.
+- Layered synergy: Tie in insights from the 7 Studio layers (Multi-omics, Topology, etc.) if available.
 
 Rules:
 - Stay within provided data; do not assert unsupported mechanisms.
@@ -114,6 +115,34 @@ Output sections:
 Rules:
 - Treat output as exploratory; avoid definitive claims.
 - If data is insufficient, state what is missing.
+"""
+
+
+STUDIO_INSIGHTS_PROMPT = """
+[Phase 6] Biologic Studio 7-Layer Insight Interpretation
+Goal: Synthesize the 7 analytical layers into a cohesive "Super Narrative". 
+Produce a comprehensive scientific report (3-5 paragraphs) interpreting the biological significance of the findings.
+
+Input Layers:
+1) Multi-omics: Cross-validation between transcriptomics and other datasets.
+2) Temporal: Identification of trends and waves.
+3) Druggability: Mapping to actionable targets.
+4) Topology: Structural importance (bottlenecks).
+5) Auto-QC: Statistical integrity findings.
+6) Laboratory: Experimental recommendations.
+7) Knowledge Hub: RAG-based context.
+
+Your report MUST include the following explicit headings:
+### Executive Summary
+### Layered Synergy Analysis
+### Priority Targets & Pathways
+### Strategic Recommendations
+
+Scientific Guardrails:
+- NO MD formatting like bolding or bullets inside the paragraphs; keep it clean and readable.
+- If data is sparse, describe WHAT is missing for a fuller picture.
+- Label synergies that cross 3+ layers as "High Confidence Strategic Insights".
+- Be explicit about the QC status; if statistical integrity is low, caveat all insights.
 """
 
 

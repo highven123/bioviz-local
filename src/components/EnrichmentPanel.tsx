@@ -6,7 +6,7 @@ import './EnrichmentPanel.css';
 interface EnrichmentPanelProps {
     volcanoData?: any[];
     onEnrichmentComplete?: (results: any) => void;
-    onPathwayClick?: (pathwayId: string, source: string) => void;
+    onPathwayClick?: (pathwayId: string, source: string, metadata?: { pathway_name?: string; hit_genes?: string[] }) => void;
 }
 
 interface EnrichmentResult {
@@ -36,6 +36,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
     const [summary, setSummary] = useState<string | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
+    const [metadata, setMetadata] = useState<any | null>(null);
 
     // Static list - could be dynamic from backend in future
     const availableSources = [
@@ -82,6 +83,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
 
                 setResults(res);
                 setIntelligenceReport(lastResponse.intelligence_report || null);
+                setMetadata(lastResponse.metadata || null);
                 const warnings = (lastResponse.warnings || []) as string[];
                 setFeedback({
                     type: warnings.length > 0 ? 'warning' : 'success',
@@ -103,7 +105,18 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 setSummary(lastResponse.summary || null);
             }
         }
-    }, [lastResponse, method, onEnrichmentComplete]);
+    }, [lastResponse, method]);
+
+    const runParameters = {
+        p_cutoff: 0.05,
+        fdr_method: 'fdr_bh',
+        min_overlap: 3,
+        min_size: 5,
+        max_size: 500,
+        permutation_num: 1000
+    };
+    const resolvedPCutoff = Number(metadata?.parameters?.p_cutoff ?? runParameters.p_cutoff) || runParameters.p_cutoff;
+    const resolvedFdrMethod = (metadata?.parameters?.fdr_method || runParameters.fdr_method) as string;
 
     const generateSummary = async (enrichmentResults: EnrichmentResult[]) => {
         setIsSummarizing(true);
@@ -137,6 +150,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
         setResults([]);
         setIntelligenceReport(null);
         setSummary(null);
+        setMetadata(null);
 
         try {
             await sendCommand('ENRICH_RUN', {
@@ -145,14 +159,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 gene_set_source: geneSetSource,
                 species,
                 custom_gmt_path: geneSetSource === 'custom' ? customGmtPath : undefined,
-                parameters: {
-                    p_cutoff: 0.05,
-                    fdr_method: 'fdr_bh',
-                    min_overlap: 3,
-                    min_size: 5,
-                    max_size: 500,
-                    permutation_num: 1000
-                }
+                parameters: runParameters
             });
         } catch (err) {
             setFeedback({
@@ -260,6 +267,30 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 <span>✓ {method === 'ORA' ? 'Over-Representation' : 'Gene Set Enrichment'}</span>
             </div>
 
+            {/* Metadata & QC */}
+            <div className="enrichment-meta">
+                <div className="meta-row">
+                    <span className="meta-pill primary">
+                        {availableSources.find(s => s.id === geneSetSource)?.name || geneSetSource}
+                        {metadata?.gene_set_version ? ` • ${metadata.gene_set_version}` : ' • cache pending'}
+                    </span>
+                    <span className="meta-pill">
+                        Species: {metadata?.input_summary?.species || species}
+                    </span>
+                    <span className="meta-pill">
+                        Background: {metadata?.input_summary?.total_genes || metadata?.output_summary?.total_pathways || 'auto-detect'}
+                    </span>
+                    <span className="meta-pill accent">
+                        p-threshold: {resolvedPCutoff.toFixed(2)} (FDR: {resolvedFdrMethod})
+                    </span>
+                </div>
+                {metadata?.gene_set_download_date && (
+                    <div className="meta-sub">
+                        Downloaded: {metadata.gene_set_download_date} | Hash: {metadata.gene_set_hash || 'n/a'}
+                    </div>
+                )}
+            </div>
+
             {/* Advanced Intelligence Report */}
             {intelligenceReport && (
                 <div className="intelligence-report-box">
@@ -349,8 +380,31 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
             {(isSummarizing || summary) && (
                 <div className="enrichment-summary-report ai-report">
                     <div className="report-header">
-                        <span className="report-icon">🤖</span>
-                        <h4>AI Deep Insight Report</h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span className="report-icon">🤖</span>
+                            <h4>AI Deep Insight Report</h4>
+                        </div>
+                        {intelligenceReport && (
+                            <button
+                                className="studio-report-btn"
+                                onClick={() => (onEnrichmentComplete as any)?.({
+                                    type: 'TOGGLE_STUDIO_VIEW',
+                                    data: intelligenceReport
+                                })}
+                                style={{
+                                    padding: '4px 10px',
+                                    fontSize: '11px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--brand-primary)',
+                                    background: 'rgba(99, 102, 241, 0.1)',
+                                    color: 'var(--brand-primary)',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                🔍 Full Studio Report
+                            </button>
+                        )}
                         {isSummarizing && <div className="typing-dots"><span>.</span><span>.</span><span>.</span></div>}
                     </div>
                     {summary && (
@@ -439,20 +493,45 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                                 {results.slice(0, 20).map((result, idx) => (
                                     <tr key={idx}>
                                         <td className="pathway-name">
-                                            {geneSetSource === 'reactome' ? (
-                                                <button
-                                                    className="pathway-link"
-                                                    onClick={() => {
-                                                        // Use pathway name for search since gseapy doesn't include Reactome IDs
-                                                        onPathwayClick?.(result.pathway_name, 'reactome');
-                                                    }}
-                                                    title="Click to search and view pathway diagram"
-                                                >
-                                                    {result.pathway_name}
-                                                </button>
-                                            ) : (
-                                                result.pathway_name
-                                            )}
+                                            <button
+                                                className="pathway-link"
+                                                onClick={() => {
+                                                    // Extract pathway ID from pathway_name if available
+                                                    // Format examples:
+                                                    // - Reactome: "Apoptotic cleavage of cellular proteins"  
+                                                    // - WikiPathways: "WP4545_Cell Cycle" or just "WP4545"
+                                                    // - GO: "GO:0006915_apoptotic process" or "apoptotic process (GO:0006915)"
+                                                    // - KEGG: "hsa04210:Apoptosis" or just pathway name
+
+                                                    let pathwayId = result.pathway_id || result.pathway_name;
+                                                    let pathwayName = result.pathway_name;
+
+                                                    // Try to extract IDs from pathway name
+                                                    if (pathwayName.includes('(GO:')) {
+                                                        // "apoptotic process (GO:0006915)" -> "GO:0006915"
+                                                        const match = pathwayName.match(/\(GO:(\d+)\)/);
+                                                        if (match) pathwayId = `GO:${match[1]}`;
+                                                    } else if (pathwayName.match(/^GO:\d+/)) {
+                                                        // "GO:0006915_apoptotic process" -> "GO:0006915"
+                                                        pathwayId = pathwayName.split('_')[0];
+                                                    } else if (pathwayName.match(/^WP\d+/)) {
+                                                        // "WP4545_Cell Cycle" -> "WP4545"
+                                                        pathwayId = pathwayName.split('_')[0];
+                                                    } else if (pathwayName.match(/^hsa\d+/)) {
+                                                        // "hsa04210:Apoptosis" -> "hsa04210"
+                                                        pathwayId = pathwayName.split(':')[0];
+                                                    }
+
+                                                    // Pass pathway info to handler with hit genes
+                                                    onPathwayClick?.(pathwayId, geneSetSource, {
+                                                        pathway_name: pathwayName,
+                                                        hit_genes: result.hit_genes || []
+                                                    });
+                                                }}
+                                                title={`Click to view ${geneSetSource} pathway diagram`}
+                                            >
+                                                {result.pathway_name}
+                                            </button>
                                         </td>
                                         <td>{result.p_value.toExponential(2)}</td>
                                         <td>{result.fdr.toFixed(4)}</td>

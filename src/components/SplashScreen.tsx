@@ -9,19 +9,21 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onEnter }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <div style={{
-      position: 'relative', // Changed from 'fixed' to 'relative'
-      top: 0,
-      left: 0,
-      width: '100vw',
-      height: '100vh',
-      backgroundColor: '#0B0E14',
-      zIndex: 9999,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden'
-    }}>
+    <div
+      data-tauri-drag-region
+      style={{
+        position: 'relative',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#0B0E14',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden'
+      }}>
       {/* Background Image */}
       <img
         src={splashImage}
@@ -58,6 +60,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onEnter }) => {
           onClick={onEnter}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
+          data-tauri-drag-region="no-drag"
           style={{
             background: isHovered
               ? 'rgba(16, 185, 129, 0.3)'

@@ -38,10 +38,16 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const onChatUpdateRef = useRef(onChatUpdate);
+    useEffect(() => {
+        onChatUpdateRef.current = onChatUpdate;
+    }, [onChatUpdate]);
 
     // Sync with parent chatHistory when it changes (e.g., switching analysis)
     useEffect(() => {
-        setMessages(chatHistory);
+        if (chatHistory && JSON.stringify(chatHistory) !== JSON.stringify(messages)) {
+            setMessages(chatHistory);
+        }
     }, [chatHistory]);
 
     const scrollToBottom = () => {
@@ -56,11 +62,11 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         let currentList: string[] = [];
         let listType: 'ul' | 'ol' | null = null;
 
-        const flushList = () => {
+        const flushList = (lineIdx: number) => {
             if (currentList.length > 0 && listType) {
                 const ListTag = listType === 'ol' ? 'ol' : 'ul';
                 elements.push(
-                    <ListTag key={elements.length} className="ai-list">
+                    <ListTag key={`list-${lineIdx}-${elements.length}`} className="ai-list">
                         {currentList.map((item, i) => <li key={i}>{item}</li>)}
                     </ListTag>
                 );
@@ -80,26 +86,26 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             const boldMatch = trimmed.match(/^\*\*(.+?)\*\*/);
 
             if (bulletMatch) {
-                if (listType !== 'ul') flushList();
+                if (listType !== 'ul') flushList(idx);
                 listType = 'ul';
                 currentList.push(bulletMatch[1]);
             } else if (numMatch) {
-                if (listType !== 'ol') flushList();
+                if (listType !== 'ol') flushList(idx);
                 listType = 'ol';
                 currentList.push(numMatch[1]);
             } else {
-                flushList();
+                flushList(idx);
                 if (boldMatch) {
-                    elements.push(<strong key={idx} className="ai-bold">{boldMatch[1]}</strong>);
+                    elements.push(<strong key={`bold-${idx}`} className="ai-bold">{boldMatch[1]}</strong>);
                     const rest = trimmed.replace(/^\*\*(.+?)\*\*:?\s*/, '');
-                    if (rest) elements.push(<span key={`${idx}-rest`}>{rest}</span>);
+                    if (rest) elements.push(<span key={`rest-${idx}`}>{rest}</span>);
                 } else if (trimmed) {
-                    elements.push(<p key={idx} className="ai-paragraph">{trimmed}</p>);
+                    elements.push(<p key={`para-${idx}`} className="ai-paragraph">{trimmed}</p>);
                 }
             }
         });
 
-        flushList();
+        flushList(lines.length);
         return elements.length > 0 ? elements : content;
     };
 
@@ -110,13 +116,20 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     // Helper to update messages and notify parent
     const updateMessages = (updater: (prev: Message[]) => Message[]) => {
         setMessages(prev => {
-            const updated = updater(prev);
-            if (onChatUpdate) {
-                onChatUpdate(updated);
-            }
-            return updated;
+            const next = updater(prev);
+            return next;
         });
     };
+
+    // Notify parent when messages change
+    useEffect(() => {
+        if (onChatUpdateRef.current && messages.length > 0) {
+            // Only notify if different from chatHistory to prevent loops
+            if (JSON.stringify(messages) !== JSON.stringify(chatHistory)) {
+                onChatUpdateRef.current(messages);
+            }
+        }
+    }, [messages, chatHistory]);
 
     // Listen for AI responses from useBioEngine's lastResponse
     useEffect(() => {
@@ -133,11 +146,6 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 console.log('[AIChatPanel] Processing AI response, content:', lastResponse.content?.substring(0, 50));
 
                 updateMessages(prev => {
-                    // Remove the last "Processing..." message if it exists
-                    const filtered = prev.filter(m => m.content !== 'Processing your request...');
-
-                    console.log('[AIChatPanel] Filtered messages count:', filtered.length);
-
                     // Build response content
                     let responseContent = lastResponse.content;
 
@@ -188,7 +196,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                     }
 
                     // Add AI response
-                    return [...filtered, {
+                    return [...prev, {
                         role: 'assistant',
                         content: responseContent,
                         timestamp: Date.now()
@@ -200,7 +208,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 const content = lastResponse.summary || lastResponse.content || lastResponse.message;
                 if (content) {
                     updateMessages(prev => [
-                        ...prev.filter(m => m.content !== 'Processing your request...'),
+                        ...prev,
                         { role: 'assistant', content, timestamp: Date.now() }
                     ]);
                 }
@@ -236,14 +244,6 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 })),
                 context: analysisContext || {}
             });
-
-            // Add placeholder while waiting for response
-            const placeholderMessage: Message = {
-                role: 'assistant',
-                content: 'Processing your request...',
-                timestamp: Date.now()
-            };
-            updateMessages(prev => [...prev, placeholderMessage]);
         } catch (error) {
             console.error('Failed to send message:', error);
             const errorMessage: Message = {
