@@ -1,0 +1,172 @@
+.runtime-log-panel {
+    position: fixed;
+    bottom: 40px;
+    right: 20px;
+    width: 600px;
+    height: 400px;
+    background: rgba(13, 17, 23, 0.95);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    z-index: 1100;
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+    color: #e6edf3;
+    font-family: 'JetBrains Mono', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.log-header {
+    padding: 8px 12px;
+    background: #161b22;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.log-header .title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.log-header .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.log-header select {
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
+}
+
+.clear-btn,
+.close-btn {
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.clear-btn:hover,
+.close-btn:hover {
+    background: #21262d;
+    color: #e6edf3;
+}
+
+.log-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.log-entry {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.log-entry.info {
+    color: #8b949e;
+}
+
+.log-entry.warning {
+    color: #d29922;
+    background: rgba(187, 128, 9, 0.1);
+}
+
+.log-entry.error {
+    color: #f85149;
+    background: rgba(248, 81, 73, 0.1);
+}
+
+.log-entry.debug {
+    color: #79c0ff;
+}
+
+.log-entry .time {
+    color: #484f58;
+    flex-shrink: 0;
+}
+
+.log-entry .source {
+    color: #58a6ff;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.log-entry .message {
+    flex: 1;
+}
+
+.payload {
+    width: 100%;
+    margin-top: 4px;
+    padding-left: 12px;
+}
+
+.payload summary {
+    cursor: pointer;
+    color: #484f58;
+    user-select: none;
+}
+
+.payload pre {
+    margin: 4px 0;
+    padding: 8px;
+    background: #0d1117;
+    border-radius: 4px;
+    border: 1px solid #30363d;
+    color: #79c0ff;
+    overflow-x: auto;
+}
+
+.empty-logs {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: #484f58;
+    font-style: italic;
+}
+
+/* Custom Scrollbar */
+.log-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.log-body::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 4px;
+}
+
+.log-body::-webkit-scrollbar-thumb:hover {
+    background: #484f58;
+}

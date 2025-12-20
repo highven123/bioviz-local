@@ -52,80 +52,87 @@ from ai_tools import (
 #   export OLLAMA_BASE_URL="http://localhost:11434/v1"  # optional
 # ============================================
 
+def _get_env_clean(key: str, default: str = "") -> str:
+    val = os.getenv(key, default)
+    if val:
+        val = val.strip().strip("'").strip('"')
+    return val
+
 def get_ai_client() -> OpenAI:
     """
     Initialize AI client based on environment configuration.
     """
-    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    import httpx
+    provider = _get_env_clean("AI_PROVIDER", "ollama").lower()
     print(f"[AI Core] Initializing AI Client. Provider: {provider}", file=sys.stderr)
     
+    # For local or Chinese providers, we usually want to bypass system proxies
+    no_proxy_client = httpx.Client(trust_env=False, timeout=120.0)
+    # For international providers, use default httpx client (which respects env proxies)
+    default_client = httpx.Client(trust_env=True, timeout=120.0)
+
     if provider == "bailian":
-        # Support both DASHSCOPE_API_KEY (official) and DEEPSEEK_API_KEY (our convention)
-        # Prioritize DEEPSEEK_API_KEY as it is explicitly set in our .env
-        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+        api_key = _get_env_clean("DEEPSEEK_API_KEY") or _get_env_clean("DASHSCOPE_API_KEY")
         
-        # Debug: Print masked key
         if api_key:
             masked_key = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else "***"
             print(f"[AI Core] Using API Key: {masked_key}", file=sys.stderr)
         else:
             print("[AI Core] No API Key found for bailian!", file=sys.stderr)
-
-        if not api_key:
-            print("[AI Core] Warning: DASHSCOPE_API_KEY or DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
             api_key = "sk-placeholder"
         
         return OpenAI(
             api_key=api_key,
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            timeout=120.0  # 增加超时时间到 120 秒
+            http_client=no_proxy_client
         )
     
     elif provider == "deepseek":
-        # DeepSeek Official API
-        api_key = os.getenv("DEEPSEEK_API_KEY")
+        api_key = _get_env_clean("DEEPSEEK_API_KEY")
         if not api_key:
             print("[AI Core] Warning: DEEPSEEK_API_KEY not set. Using placeholder.", file=sys.stderr)
             api_key = "sk-placeholder"
         
         return OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com",
+            http_client=no_proxy_client
         )
     
     elif provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = _get_env_clean("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
-        return OpenAI(api_key=api_key)
+        return OpenAI(api_key=api_key, http_client=default_client)
     
     elif provider == "ollama":
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        base_url = _get_env_clean("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         return OpenAI(
-            api_key="ollama",  # Ollama doesn't require a real key
-            base_url=base_url
+            api_key="ollama",
+            base_url=base_url,
+            http_client=no_proxy_client
         )
     
     else:
         # Custom provider
-        api_key = os.getenv("CUSTOM_API_KEY", "placeholder")
-        base_url = os.getenv("CUSTOM_BASE_URL", "http://localhost:11434/v1")
-        return OpenAI(api_key=api_key, base_url=base_url)
+        api_key = _get_env_clean("CUSTOM_API_KEY", "placeholder")
+        base_url = _get_env_clean("CUSTOM_BASE_URL", "http://localhost:11434/v1")
+        return OpenAI(api_key=api_key, base_url=base_url, http_client=default_client)
 
 
 def get_model_name() -> str:
     """Get the model name based on provider."""
-    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    provider = _get_env_clean("AI_PROVIDER", "ollama").lower()
     
     if provider in ["bailian", "deepseek"]:
-        return os.getenv("DEEPSEEK_MODEL", "deepseek-v3.2-exp")
+        return _get_env_clean("DEEPSEEK_MODEL", "deepseek-v3")
     elif provider == "openai":
-        return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        return _get_env_clean("OPENAI_MODEL", "gpt-4o-mini")
     elif provider == "ollama":
-        return os.getenv("OLLAMA_MODEL", "llama3")
+        return _get_env_clean("OLLAMA_MODEL", "llama3")
     else:
-        return os.getenv("CUSTOM_MODEL", "gpt-3.5-turbo")
+        return _get_env_clean("CUSTOM_MODEL", "gpt-3.5-turbo")
 
 
 # Initialize client

@@ -39,8 +39,8 @@ export const SafetyGuardModal: React.FC<SafetyGuardModalProps> = ({ proposal, on
     };
 
     return (
-        <div className="safety-guard-overlay" role="dialog" aria-modal="true">
-            <div className={`safety-guard-modal ${isRed ? 'red-zone' : 'yellow-zone'}`}>
+        <div className="safety-guard-overlay" role="dialog" aria-modal="true" data-tauri-drag-region>
+            <div className={`safety-guard-modal ${isRed ? 'red-zone' : 'yellow-zone'}`} data-tauri-drag-region="no-drag">
                 {/* Header */}
                 <div className="safety-guard-header">
                     <div className="safety-icon">

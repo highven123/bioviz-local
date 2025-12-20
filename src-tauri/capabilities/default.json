@@ -25,6 +25,7 @@
     "fs:default",
     "fs:allow-home-write-recursive",
     "fs:allow-temp-read-recursive",
+    "core:window:allow-start-dragging",
     {
       "identifier": "shell:allow-execute",
       "allow": [

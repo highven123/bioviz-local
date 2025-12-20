@@ -5,6 +5,7 @@ BioViz Local - Python Sidecar (Long-Running Daemon Process)
 This is NOT a one-shot script. It runs as a persistent daemon process,
 communicating with the Rust backend via STDIO (stdin/stdout).
 
+
 Protocol:
 - Read one JSON line from stdin
 - Process the command
@@ -29,9 +30,47 @@ except ImportError:
     pass
 import traceback
 import math
+import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from mapper import color_kegg_pathway, get_pathway_statistics
+from biologic_logic import biologic_studio
+from pathway.adapters.wikipathways_adapter import WikiPathwaysAdapter
+from pathway.adapters.go_adapter import GOAdapter
+from pathway.auto_layout import PathwayAutoLayoutEngine
+from pathway.auto_layout import PathwayAutoLayoutEngine
+from pathway_helpers import _color_universal_pathway, _get_generic_statistics
+
+# ==================================================================================
+# CRITICAL FIX FOR PACKAGED APP IPC
+# Force stdout/stderr to be unbuffered or line-buffered.
+# In packaged mode (PyInstaller), stdout is often fully buffered (4K/8K),
+# causing the Rust frontend to wait indefinitely for small JSON responses.
+# ==================================================================================
+if sys.platform != 'win32':
+    # Unix/Linux/Mac: Force line buffering (1) or unbuffered (0)
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+    
+# Alternatively, force flush on every print (done in send_response)
+# ==================================================================================
+
+
+class BioJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle numpy types."""
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            if np.isnan(obj): return None
+            return float(obj)
+        elif isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        return super(BioJSONEncoder, self).default(obj)
 
 # Import v2.0 modules
 try:
@@ -106,7 +145,7 @@ def send_response(data: Dict[str, Any]) -> None:
             data["request_id"] = CURRENT_REQUEST_ID
         if CURRENT_CMD is not None and "cmd" not in data:
             data["cmd"] = CURRENT_CMD
-        json_str = json.dumps(data, ensure_ascii=False)
+        json_str = json.dumps(data, ensure_ascii=False, cls=BioJSONEncoder)
         print(json_str, flush=True)
     except Exception as e:
         # Fallback error response
@@ -654,9 +693,12 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     file_path = payload.get("file_path", "")
     mapping = payload.get("mapping", {})
-    template_id = payload.get("template_id", "")
+    template_id = payload.get("template_id")  # Can be None, do NOT default to ""
     data_type = payload.get("data_type", "gene")
     filters = payload.get("filters", {})  # Optional: {pvalue_threshold, logfc_threshold, method, methods}
+    
+    # DEBUG: Log what we received
+    logging.info(f"[ANALYZE] Received template_id: {repr(template_id)} (type: {type(template_id).__name__})")
     
     if not file_path:
         return {"status": "error", "message": "Missing 'file_path' parameter"}
@@ -971,23 +1013,67 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
         analysis_table_path = None
 
         # Color the pathway if template_id is provided
+        # Support multiple pathway sources: KEGG, WikiPathways, GO, Custom
+        pathway_source = payload.get('pathway_source', 'kegg')
+        pathway_name = payload.get('pathway_name', template_id)
+        hit_genes = payload.get('hit_genes', [])  # Genes in this pathway from enrichment
+        
         if template_id:
-            colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
-            statistics = get_pathway_statistics(colored_pathway)
+            # Determine which adapter to use based on source or ID pattern
+            if pathway_source == 'wikipathways' or template_id.upper().startswith('WP'):
+                # WikiPathways: Use auto-layout
+                adapter = WikiPathwaysAdapter()
+                if hit_genes:
+                    adapter.set_gene_list(template_id, hit_genes, pathway_name)
+                pathway_diagram = adapter.load(template_id)
+                if pathway_diagram:
+                    colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                    statistics = get_pathway_statistics(colored_pathway)
+                else:
+                    colored_pathway = None
+                    statistics = _get_generic_statistics(volcano_data)
+                    
+            elif pathway_source in ['go', 'go_bp'] or template_id.upper().startswith('GO:'):
+                # Gene Ontology: Use auto-layout
+                adapter = GOAdapter()
+                if hit_genes:
+                    adapter.set_gene_list(template_id, hit_genes, pathway_name)
+                pathway_diagram = adapter.load(template_id)
+                if pathway_diagram:
+                    colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                    statistics = get_pathway_statistics(colored_pathway)
+                else:
+                    colored_pathway = None
+                    statistics = _get_generic_statistics(volcano_data)
+                    
+            elif pathway_source == 'custom':
+                # Custom GMT: Use auto-layout
+                if hit_genes:
+                    layout_engine = PathwayAutoLayoutEngine(layout_algorithm='force')
+                    pathway_diagram = layout_engine.generate_diagram(
+                        genes=hit_genes,
+                        pathway_name=pathway_name or template_id,
+                        pathway_id=template_id,
+                        source='custom',
+                        species='Human'
+                    )
+                    if pathway_diagram:
+                        colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                        statistics = get_pathway_statistics(colored_pathway)
+                    else:
+                        colored_pathway = None
+                        statistics = _get_generic_statistics(volcano_data)
+                else:
+                    colored_pathway = None
+                    statistics = _get_generic_statistics(volcano_data)
+                    
+            else:
+                # Default: KEGG pathway
+                colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
+                statistics = get_pathway_statistics(colored_pathway)
         else:
             colored_pathway = None
-            # Generic statistics fallback when no pathway is selected
-            up = len([v for v in volcano_data if v['status'] == 'UP'])
-            down = len([v for v in volcano_data if v['status'] == 'DOWN'])
-            ns = len(volcano_data) - up - down
-            statistics = {
-                'total_nodes': len(volcano_data),
-                'upregulated': up,
-                'downregulated': down,
-                'unchanged': ns,
-                'percent_upregulated': 100 * up / len(volcano_data) if volcano_data else 0,
-                'percent_downregulated': 100 * down / len(volcano_data) if volcano_data else 0
-            }
+            statistics = _get_generic_statistics(volcano_data)
         
         # Generate AI insights from analysis results
         try:
@@ -1019,6 +1105,101 @@ def handle_analyze(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "status": "error",
             "message": f"Analysis failed: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
+
+def handle_visualize_pathway(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle VISUALIZE_PATHWAY command.
+    Generates a pathway diagram (KEGG, WikiPathways, GO, or Custom) 
+    using provided gene_expression map instead of reading from file.
+    """
+    template_id = payload.get("template_id")
+    pathway_source = payload.get('pathway_source', 'kegg')
+    pathway_name = payload.get('pathway_name', template_id)
+    gene_expression = payload.get("gene_expression", {})
+    hit_genes = payload.get('hit_genes', [])
+    data_type = payload.get("data_type", "gene")
+
+    logging.info(f"[VISUALIZE] Pathway ID: {template_id}, Source: {pathway_source}, Genes in expression map: {len(gene_expression)}")
+
+    # Robustness Fix: If template_id is missing (e.g. from frontend race condition),
+    # treat it as a request for "just data, no visual".
+    if not template_id:
+        logging.warning("[VISUALIZE] Missing template_id, returning empty pathway structure")
+        return {
+            "status": "ok",
+            "pathway": None,
+            "statistics": None,
+            "volcano_data": [],
+            "message": "No template_id provided, skipped visualization"
+        }
+    
+    # We allow empty gene_expression (just no coloring), but it must be a dict
+    if not isinstance(gene_expression, dict):
+        return {"status": "error", "message": "'gene_expression' must be a dictionary"}
+
+    try:
+        colored_pathway = None
+        # ... rest of the logic
+        statistics = {
+            'total_nodes': 0,
+            'upregulated': 0,
+            'downregulated': 0,
+            'unchanged': 0,
+            'percent_upregulated': 0,
+            'percent_downregulated': 0
+        }
+
+        # Determine which adapter to use
+        if pathway_source == 'wikipathways' or template_id.upper().startswith('WP'):
+            adapter = WikiPathwaysAdapter()
+            if hit_genes:
+                adapter.set_gene_list(template_id, hit_genes, pathway_name)
+            pathway_diagram = adapter.load(template_id)
+            if pathway_diagram:
+                colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                statistics = get_pathway_statistics(colored_pathway)
+                
+        elif pathway_source in ['go', 'go_bp'] or template_id.upper().startswith('GO:'):
+            adapter = GOAdapter()
+            if hit_genes:
+                adapter.set_gene_list(template_id, hit_genes, pathway_name)
+            pathway_diagram = adapter.load(template_id)
+            if pathway_diagram:
+                colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                statistics = get_pathway_statistics(colored_pathway)
+                
+        elif pathway_source == 'custom' or (hit_genes and pathway_source == 'custom'):
+            layout_engine = PathwayAutoLayoutEngine(layout_algorithm='force')
+            pathway_diagram = layout_engine.generate_diagram(
+                genes=hit_genes,
+                pathway_name=pathway_name or template_id,
+                pathway_id=template_id,
+                source='custom',
+                species='Human'
+            )
+            if pathway_diagram:
+                colored_pathway = _color_universal_pathway(pathway_diagram, gene_expression, data_type)
+                statistics = get_pathway_statistics(colored_pathway)
+        else:
+            # Default KEGG
+            colored_pathway = color_kegg_pathway(template_id, gene_expression, data_type=data_type)
+            statistics = get_pathway_statistics(colored_pathway)
+
+        return {
+            "status": "ok",
+            "pathway": colored_pathway,
+            "statistics": statistics,
+            "gene_count": len(gene_expression),
+            "template_id": template_id,
+            "pathway_source": pathway_source
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error", 
+            "message": f"Pathway visualization failed: {str(e)}",
             "traceback": traceback.format_exc()
         }
 
@@ -1476,6 +1657,17 @@ def handle_describe_visualization(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "message": f"Failed to describe visualization: {str(e)}"}
 
+def handle_ai_interpret_studio(payload: Dict[str, Any]):
+    """[Phase 6] Synthesis of 7-layer Studio Intelligence."""
+    from ai_tools import execute_tool
+    try:
+        result = execute_tool("summarize_studio_intelligence", payload)
+        send_response(result)
+    except Exception as e:
+        logging.error(f"Studio AI synthesis failed: {e}")
+        send_error(str(e))
+
+
 def process_command(command_obj: Dict[str, Any]) -> None:
     """Route command to appropriate handler."""
     global CURRENT_REQUEST_ID, CURRENT_CMD
@@ -1571,6 +1763,7 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         return_handlers["LOAD_UNIFIED_PATHWAY"] = handle_load_unified_pathway
         return_handlers["SEARCH_PATHWAYS"] = handle_search_pathways
         return_handlers["SEARCH_AND_LOAD_PATHWAY"] = handle_search_and_load_pathway
+        return_handlers["VISUALIZE_PATHWAY"] = handle_visualize_pathway
         logging.debug("Unified Pathway v4.0 handlers registered")
 
         # Handlers that send response directly (new style)
@@ -1579,9 +1772,12 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "LOAD_HISTORY": handle_load_history,
             "LOAD_ANALYSIS": handle_load_analysis,
             "SAVE_DATA": handle_save_data,
+            "AI_INTERPRET_STUDIO": handle_ai_interpret_studio,
         }
         
         # Check both handler dicts
+        logging.info(f"DEBUG: Registered Handlers: {sorted(list(return_handlers.keys()) + list(direct_send_handlers.keys()))}")
+        
         if cmd in return_handlers:
             logging.info(f"[CMD] Calling handler for: {cmd}")
             result = return_handlers[cmd](payload)
@@ -1627,18 +1823,28 @@ def run():
     
     print("[BioEngine] Engine started. Waiting for commands...", file=sys.stderr)
     print(f"[BioEngine] Python version: {sys.version}", file=sys.stderr)
+    print(f"[BioEngine] PATCH_VERSION: 2025-12-20-FINAL-FIX", file=sys.stderr) # Version Tag
+    
+    # DEBUG: Check stdin status
+    print(f"[BioEngine] stdin isatty: {sys.stdin.isatty()}", file=sys.stderr)
+    print(f"[BioEngine] stdin closed: {sys.stdin.closed}", file=sys.stderr)
+    print(f"[BioEngine] stdin readable: {sys.stdin.readable()}", file=sys.stderr)
 
     # Send startup confirmation
     send_response({"status": "ready", "message": "BioViz Engine initialized"})
     
     while True:
         try:
+            print("[BioEngine] Waiting for input from stdin...", file=sys.stderr)
             # Blocking read from stdin
             # This will return empty string when stdin is closed
             line = sys.stdin.readline()
             
+            print(f"[BioEngine] Received line (len={len(line)}): {line[:100]}", file=sys.stderr)
+            
             # Check for EOF (parent process closed stdin)
             if not line:
+                print("[BioEngine] EOF detected, exiting", file=sys.stderr)
                 break
             
             # Strip whitespace and skip empty lines
@@ -2048,144 +2254,59 @@ def handle_enrich_run(payload: Dict[str, Any]) -> Dict[str, Any]:
                 permutation_num=params.get('permutation_num', 1000)
             )
         
-        # Advanced Intelligence Logic (Rule-based)
+        # ========================================================================
+        # NEW: Biologic Studio 7-Layer Intelligence
+        # ========================================================================
+        
+        # 1. Basic Stats for the Summary
         all_res = []
         if method == 'ORA':
             all_res = result.get('results', [])
         else:
             all_res = result.get('up_regulated', []) + result.get('down_regulated', [])
-            
         sig_pathways = [p for p in all_res if p.get('fdr', 1.0) < 0.05]
-        
-        # 1. Basic Stats
         sig_count = len(sig_pathways)
-        
-        # 2. Key Drivers (Genes in multiple pathways)
+
+        # 2. Key Drivers
         gene_to_pathways = {}
         for p in sig_pathways:
             path_name = p.get('pathway_name', 'Unknown')
-            # Handle hit_genes string or list
             hits = p.get('hit_genes', [])
-            if isinstance(hits, str):
-                hits = [g.strip() for g in hits.split(',') if g.strip()]
+            if isinstance(hits, str): hits = [g.strip() for g in hits.split(',') if g.strip()]
             for g in hits:
                 if g not in gene_to_pathways: gene_to_pathways[g] = []
                 gene_to_pathways[g].append(path_name)
-        
         drivers = sorted([{"gene": g, "count": len(paths), "paths": paths[:3]} 
                         for g, paths in gene_to_pathways.items() if len(paths) >= 3], 
                         key=lambda x: x['count'], reverse=True)[:5]
-        
-        # 3. Orphan Significant Genes
-        # We need the original genes to find orphans
-        all_input_genes = []
+
+        # 3. Convert genes to a standardized format for the logic engine
+        de_results_for_bil = []
         if isinstance(genes, dict):
-            # genes is {symbol: logfc}
-            all_input_genes = [{"gene": g, "logfc": val} for g, val in genes.items()]
+             for g, val in genes.items():
+                 de_results_for_bil.append({"gene": g, "log2FC": val, "pvalue": 0.001})
         else:
-            all_input_genes = [{"gene": g, "logfc": 0} for g in genes]
-            
-        # Filter for significant input genes (heuristic: top 50 by magnitude or p-value if we had it)
-        # Since handle_enrich_run only gets 'genes', we use magnitude of logfc if provided
-        sig_input = sorted([g for g in all_input_genes if abs(g['logfc']) > 1.0], 
-                         key=lambda x: abs(x['logfc']), reverse=True)[:30]
+             for g in genes:
+                 de_results_for_bil.append({"gene": g, "log2FC": 0, "pvalue": 0.001})
         
-        # A gene is an orphan if it's significant in DE but doesn't appear in ANY of the top 10 significant pathways
-        top_10_pathway_genes = set()
-        for p in sig_pathways[:10]:
-            hits = p.get('hit_genes', [])
-            if isinstance(hits, str):
-                hits = [g.strip() for g in hits.split(',') if g.strip()]
-            top_10_pathway_genes.update(hits)
-            
-        orphans = [g['gene'] for g in sig_input if g['gene'] not in top_10_pathway_genes][:5]
-        
-        # 4. Antagonistic Pathways (Identify if any pathways show balanced mixed regulation)
-        antagonistic_paths = []
-        for p in sig_pathways:
-            hits = p.get('hit_genes', [])
-            if isinstance(hits, str): hits = [g.strip() for g in hits.split(',') if g.strip()]
-            
-            up_c, down_c = 0, 0
-            for g in hits:
-                lfc = genes.get(g, 0) if isinstance(genes, dict) else 0
-                if lfc > 0.5: up_c += 1
-                elif lfc < -0.5: down_c += 1
-            
-            is_antag = (up_c > 0 and down_c > 0 and (min(up_c, down_c) / max(1, len(hits)) > 0.25))
-            if is_antag:
-                p['is_antagonistic'] = True
-                antagonistic_paths.append(p.get('pathway_name', 'Unknown'))
-            else:
-                p['is_antagonistic'] = False
-
-        # 5. Redundancy / Hierarchy (Group pathways with similar names)
-        keyword_counts = {}
-        stop_words = {'signaling', 'pathway', 'by', 'of', 'and', 'the', 'in', 'r-hsa', 'hsa'}
-        for p in sig_pathways[:15]:
-            words = set(p.get('pathway_name', '').lower().replace('-', ' ').replace('_', ' ').split())
-            cleaned = words - stop_words
-            for w in cleaned:
-                if len(w) > 3:
-                    keyword_counts[w] = keyword_counts.get(w, 0) + 1
-        
-        redundant_themes = [k for k, v in keyword_counts.items() if v >= 4][:3]
-
-        # 6. Silent Pathway Members (Significant enrichment but few total hits)
-        silent_paths = []
-        for p in sig_pathways[:5]:
-            # If overlap is very low (e.g. < 10% of pathway) but still p < 0.05
-            # We need the denominator from overlap_ratio like "10/700"
-            overlap_str = p.get('overlap_ratio', '0/1')
-            try:
-                hits_c, total_c = map(int, overlap_str.split('/'))
-                if hits_c / total_c < 0.05 and hits_c > 0:
-                    silent_paths.append(p.get('pathway_name', 'Unknown'))
-            except: pass
-
-        # 7. Leading-Edge Trends (For GSEA - consistency check)
-        # (Already handled by stat logic, but we can flag it)
-
-        # Build Insights
-        insights = []
-        if sig_count > 0:
-            insights.append(f"Found {sig_count} pathways with high statistical confidence.")
-            
-            if redundant_themes:
-                themes_str = ", ".join([t.capitalize() for t in redundant_themes])
-                insights.append(f"Systemic Redundancy: Multiple significant hits relate to {themes_str} processes.")
-            
-            if drivers:
-                insights.append(f"Key Drivers: {', '.join([d['gene'] for d in drivers])} are influencing multiple systems.")
-            
-            if antagonistic_paths:
-                insights.append(f"Antagonistic Regulation: Pathways like '{antagonistic_paths[0]}' show balanced mixed regulation.")
-            
-            if orphans:
-                insights.append(f"Orphan Genes: {', '.join(orphans)} show high impact but aren't mapped to top pathways.")
-            
-            if silent_paths:
-                insights.append(f"Precise Regulation: '{silent_paths[0]}' is significant despite only a tiny fraction of its members being active.")
-        else:
-            # Baseline / Integrity Layer
-            input_size = len(genes) if isinstance(genes, list) else len(genes.keys())
-            if input_size < 30:
-                insights.append("Data Sparsity: Input gene list is too short for reliable biological enrichment.")
-            else:
-                insights.append("Discrete Signals: High-impact genes detected but they do not cluster into known biological pathways.")
+        bil_insights = biologic_studio.process_all_layers(
+            de_results=de_results_for_bil,
+            pathway_data=None, 
+            metadata={"method": method, "species": species}
+        )
 
         result['intelligence_report'] = {
-            "summary": insights[0] if insights else "Analysis complete.",
-            "full_details": insights,
-            "sig_count": sig_count,
+            "summary": f"Studio Overview: {sig_count} significant pathways detected. {bil_insights.get('summary', '')}",
             "drivers": drivers,
-            "orphans": orphans,
-            "antagonistic": antagonistic_paths[:3],
-            "redundant_themes": redundant_themes,
-            "silent_paths": silent_paths[:3]
+            "orphans": bil_insights.get("temporal", {}).get("waves", []) if bil_insights.get("temporal", {}).get("active") else [],
+            "antagonistic": [bil_insights.get("qc", {}).get("note", "Processing complete")],
+            "redundant_themes": bil_insights.get("topology", {}).get("bottlenecks", []),
+            "silent_paths": bil_insights.get("lab", {}).get("recommendations", []),
+            "full_details": [bil_insights.get("qc", {}).get("note", "Standard analysis")],
+            "layers": bil_insights
         }
         
-        result['standard_summary'] = insights[0] if insights else "Analysis complete."
+        result['standard_summary'] = result['intelligence_report']['summary']
         return result
         
     except Exception as e:

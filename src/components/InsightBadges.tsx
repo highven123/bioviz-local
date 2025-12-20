@@ -12,7 +12,7 @@ interface InsightBadgesProps {
 }
 
 export const InsightBadges: React.FC<InsightBadgesProps> = ({ insights }) => {
-    if (!insights || insights.badges.length === 0) {
+    if (!insights || !insights.badges || insights.badges.length === 0) {
         return null;
     }
 
@@ -39,7 +39,7 @@ export const InsightBadges: React.FC<InsightBadgesProps> = ({ insights }) => {
             )}
 
             <div className="badges-grid">
-                {insights.badges.map((badge, idx) => (
+                {insights.badges.map((badge: InsightBadge, idx: number) => (
                     <div key={idx} className={`insight-badge ${badge.type.toLowerCase()}`}>
                         <div className="badge-header">
                             <span className="badge-icon">{getBadgeIcon(badge.type)}</span>

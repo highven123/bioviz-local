@@ -15,7 +15,7 @@ import { EnrichmentPanel } from './components/EnrichmentPanel';
 import { ImageUploader } from './components/ImageUploader';
 import { AIEventPanel } from './components/AIEventPanel';
 import { DEAnalysisPanel } from './components/DEAnalysisPanel';
-import { exportSession, importSession } from './utils/sessionExport';
+import { exportSession, importSession, exportSessionAsInteractiveHtml } from './utils/sessionExport';
 import { MultiSamplePanel } from './components/MultiSamplePanel';
 import { eventBus, BioVizEvents } from './stores/eventBus';
 import { ENTITY_META, resolveEntityKind, EntityKind } from './entityTypes';
@@ -25,7 +25,11 @@ import { save, ask } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { PathwaySelectorDropdown } from './components/PathwaySelectorDropdown';
 import { TemplatePicker } from './components/TemplatePicker';
+import { IntelligenceDashboard } from './components/IntelligenceDashboard';
+import { RuntimeLogPanel } from './components/RuntimeLogPanel';
 import './App.css';
+import demoSession from '../assets/sample_timecourse_6points_session.json';
+import demoScript from '../assets/sample_timecourse_6points_report.md?raw';
 
 // ... (Types remain same) ...
 // --- Types ---
@@ -96,16 +100,13 @@ function App() {
   // Separate independent states for left and right panels
   const [leftView, setLeftView] = useState<'chart' | 'table'>('chart');
   const [rightPanelView, setRightPanelView] = useState<'ai-chat' | 'images' | 'multi-sample' | 'de-analysis' | 'enrichment'>('enrichment');
+  const [mainView, setMainView] = useState<'pathway' | 'intelligence'>('pathway');
+  const [studioIntelligence, setStudioIntelligence] = useState<any>(null);
 
   // Panel visibility states for collapsible layout
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showCenterPanel, setShowCenterPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true); // Default: all panels open
-
-  // Draggable toolbar position (default: top-right of pathway view, accounting for left panel)
-  const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth * 0.65, y: 80 });
-  const [_isDragging, setIsDragging] = useState(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
 
   const [showEvidencePopup, setShowEvidencePopup] = useState(false);
   const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
@@ -113,10 +114,50 @@ function App() {
   const activeAnalysis = analysisResults[activeResultIndex] || null;
   const uploadedFileBase = getBaseName(activeAnalysis?.sourceFilePath);
 
+  const [showRuntimeLog, setShowRuntimeLog] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
+  const [isGeneratingStudioReport, setIsGeneratingStudioReport] = useState(false);
 
   // License State (Simulated)
   const isPro = true;
+
+  // One-time migration: Fix old configs with empty pathwayId (v1.2.1)
+  useEffect(() => {
+    const STORAGE_KEY = 'bioviz_last_config';
+    const VERSION_KEY = 'bioviz_config_version';
+    const CURRENT_VERSION = '1.2.1';
+
+    try {
+      const lastVersion = localStorage.getItem(VERSION_KEY);
+
+      if (lastVersion !== CURRENT_VERSION) {
+        console.log(`[App] Migrating from version ${lastVersion || 'unknown'} to ${CURRENT_VERSION}`);
+
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const config = JSON.parse(saved);
+
+          // Fix empty pathwayId
+          if (config.pathwayId === '') {
+            console.warn('[App] Found old config with empty pathwayId, clearing it');
+            config.pathwayId = undefined;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+              ...config,
+              timestamp: Date.now()
+            }));
+            console.log('[App] Config fixed and saved');
+          }
+        }
+
+        // Mark migration complete
+        localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+        console.log(`[App] Migration to v${CURRENT_VERSION} complete`);
+      }
+    } catch (e) {
+      console.error('[App] Migration failed:', e);
+    }
+  }, []); // Run once on mount
+
 
   // Auto-save analysisResults to localStorage whenever it changes
   useEffect(() => {
@@ -127,6 +168,25 @@ function App() {
       console.error('[App] Failed to save sessions:', e);
     }
   }, [analysisResults]);
+
+  // Add keyboard shortcut to open devtools (Cmd+Shift+I or Ctrl+Shift+I)
+  useEffect(() => {
+    const handleKeyPress = async (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.metaKey || e.ctrlKey) && e.key === 'I') {
+        e.preventDefault();
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('open_devtools');
+          console.log('[App] Developer tools toggled');
+        } catch (err) {
+          console.error('[App] Failed to open devtools:', err);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
 
   // --- Resizing Logic ---
   const [colSizes, setColSizes] = useState<number[]>([20, 55, 25]); // Left, Center, Right in %
@@ -214,6 +274,9 @@ function App() {
     const line = `[${timestamp}] ${message}`;
     setLogs(prev => [...prev.slice(-20), line]);
 
+    // Emit to EventBus so RuntimeLogPanel can catch it
+    eventBus.emit(BioVizEvents.APP_LOG, { message });
+
     // Persist a lightweight run log for debugging (user home dir)
     const persistLog = async () => {
       try {
@@ -231,6 +294,29 @@ function App() {
       }
     };
     void persistLog();
+  };
+
+  const handleLoadDemoSession = () => {
+    const normalizedPath = 'assets/sample_timecourse_6points.csv';
+    const demoAnalysis: AnalysisResult = {
+      ...(demoSession as any),
+      sourceFilePath: normalizedPath,
+      config: {
+        ...(demoSession as any).config,
+        filePaths: [normalizedPath]
+      },
+      entityKind: resolveEntityKind((demoSession as any).entityKind || 'gene')
+    };
+
+    setAnalysisResults(prev => {
+      const next = [...prev, demoAnalysis];
+      setActiveResultIndex(next.length - 1);
+      return next;
+    });
+    setWorkflowStep('viz');
+    setMaxWizardStep(2);
+    setWizardStep(2);
+    addLog('🎬 Loaded demo session (sample_timecourse_6points).');
   };
 
   // --- Actions ---
@@ -258,7 +344,7 @@ function App() {
           {
             file_path: filePath,
             mapping: config.mapping,
-            template_id: config.pathwayId,
+            template_id: config.pathwayId || undefined, // Send undefined if not set
             data_type: config.dataType,
             filters: {
               method: primaryMethod,
@@ -407,6 +493,98 @@ function App() {
     setActiveGene(null);
   };
 
+  const handleGenerateSuperNarrative = async () => {
+    if (!studioIntelligence) return;
+    setIsGeneratingStudioReport(true);
+    addLog("Synthesizing 7-layer Studio Intelligence report...");
+    const requestId = `studio-${Date.now()}`;
+    addLog(`✨ AI Synthesis started... (ID: ${requestId})`);
+    try {
+      const res = await sendCommand('AI_INTERPRET_STUDIO', {
+        intelligence_data: studioIntelligence
+      }, true);
+
+      if (res && (res as any).super_narrative) {
+        const narrative = (res as any).super_narrative;
+        console.log('[BioViz] 🤖 AI Narrative Received:', narrative.length, 'chars');
+        addLog(`AI Synthesis complete (${narrative.length} chars).`);
+
+        // Force a fresh object to ensure re-render
+        setStudioIntelligence((prev: any) => {
+          if (!prev) return null;
+          const next = { ...prev, super_narrative: narrative };
+          console.log('[BioViz] 🔄 Updating Studio Intelligence State:', next);
+          return next;
+        });
+
+        // Also save to active result if possible to persist across view switches
+        if (activeAnalysis && activeResultIndex >= 0) {
+          setAnalysisResults(prev => {
+            const next = [...prev];
+            if (next[activeResultIndex]) {
+              const currentInsights = next[activeResultIndex].insights || {
+                summary: '',
+                layers: {
+                  multi_omics: { active: false },
+                  temporal: { active: false },
+                  druggability: { active: false },
+                  topology: { active: false },
+                  qc: { status: 'PASS' },
+                  lab: { active: false },
+                  rag_hints: { hints: [] }
+                },
+                drivers: []
+              };
+
+              next[activeResultIndex] = {
+                ...next[activeResultIndex],
+                insights: {
+                  ...currentInsights,
+                  super_narrative: narrative
+                }
+              };
+            }
+            return next;
+          });
+        }
+        addLog("AI Super Narrative analysis complete.");
+      } else {
+        addLog("AI Synthesis returned no narrative content.");
+      }
+    } catch (err) {
+      console.error('Failed to generate studio report:', err);
+      addLog(`Failed to generate AI Super Narrative: ${err}`);
+    } finally {
+      setIsGeneratingStudioReport(false);
+    }
+  };
+
+  const handleEnrichmentComplete = React.useCallback((res: any) => {
+    console.log('[App] Enrichment results arrived:', res.cmd);
+
+    // Handle custom Studio Toggle action from AI Deep Insight
+    if (res?.type === 'TOGGLE_STUDIO_VIEW') {
+      setStudioIntelligence(res.data);
+      setMainView('intelligence');
+      return;
+    }
+
+    // Save insights to session
+    if (activeAnalysis && res?.intelligence_report) {
+      setAnalysisResults(prev => {
+        const updated = [...prev];
+        if (updated[activeResultIndex]) {
+          updated[activeResultIndex] = {
+            ...updated[activeResultIndex],
+            insights: res.intelligence_report
+          };
+        }
+        return updated;
+      });
+      addLog("Analysis insights updated.");
+    }
+  }, [activeAnalysis, activeResultIndex]);
+
   const handleDEAnalysisComplete = async (response: any) => {
     if (!activeAnalysis) return;
 
@@ -551,63 +729,137 @@ function App() {
   }
 
   return (
-    <div className="workbench-container">
+    <div className="app-container">
       {/* SAFETY GUARD: Blocks all interaction when active */}
       <SafetyGuardModal
         proposal={activeProposal}
         onRespond={resolveProposal}
       />
-      {/* ... keeping the rest of the layout same ... */}
 
-      {/* Header */}
-      <header className="app-header">
-        <div className="header-brand">
-          <h1>
-            <span>🧬</span>
-            BioViz <span>Local</span>
-          </h1>
-          {activeAnalysis && (
-            <div style={{ marginLeft: '20px' }}>
-              <PathwaySelectorDropdown
-                onSelect={(id) => {
-                  if (activeAnalysis.config) {
-                    handleAnalysisStart({ ...activeAnalysis.config, pathwayId: id });
-                  }
-                }}
-                currentPathwayId={activeAnalysis.pathway?.id}
-                currentPathwayName={activeAnalysis.pathway?.name || activeAnalysis.pathway?.title}
-                dataType={activeAnalysis.entityKind === 'other' ? 'gene' : activeAnalysis.entityKind}
-                sendCommand={sendCommand}
-              />
+      <div className="workbench-container" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Simplified Header with Logo */}
+        <header
+          className="app-header"
+          data-tauri-drag-region
+        >
+          <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div data-tauri-drag-region className="header-brand">
+              <h1 data-tauri-drag-region style={{ fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span data-tauri-drag-region>🧬</span>
+                <span data-tauri-drag-region>BioViz <span data-tauri-drag-region style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>Local</span></span>
+              </h1>
             </div>
-          )}
-        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-          <div className="status-indicator">
-            <div className={`status-dot ${!isConnected ? 'disconnected' : ''}`}
-              style={{ backgroundColor: isConnected ? 'var(--color-success)' : 'var(--color-danger)' }}
-            />
-            {isConnected ? 'Engine Ready' : 'Connecting...'}
+            {activeAnalysis && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="analysis-tag">Active Analysis</span>
+                <div className="no-drag">
+                  <PathwaySelectorDropdown
+                    onSelect={(id) => {
+                      if (activeAnalysis.config) {
+                        handleAnalysisStart({ ...activeAnalysis.config, pathwayId: id });
+                      }
+                    }}
+                    currentPathwayId={activeAnalysis.pathway?.id}
+                    currentPathwayName={activeAnalysis.pathway?.name || activeAnalysis.pathway?.title}
+                    dataType={activeAnalysis.entityKind === 'other' ? 'gene' : activeAnalysis.entityKind}
+                    sendCommand={sendCommand}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          {activeAnalysis && (
-            <>
-              <button
-                onClick={() => exportSession(activeAnalysis)}
-                title="Export Session (JSON + Markdown)"
+
+          <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {/* View Toggles */}
+            {workflowStep === 'viz' && (
+              <div
                 style={{
-                  padding: '6px 12px',
-                  background: 'rgba(34, 197, 94, 0.1)',
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '16px',
-                  transition: 'all 0.2s'
+                  display: 'flex',
+                  flexDirection: 'row',
+                  gap: '6px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(10px)',
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)'}
+              >
+                <button
+                  onClick={() => setShowLeftPanel(!showLeftPanel)}
+                  title={showLeftPanel ? 'Hide Data Panel (Left)' : 'Show Data Panel (Left)'}
+                  style={{
+                    width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: showLeftPanel ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '16px', transition: 'all 0.2s'
+                  }}
+                >
+                  📊
+                </button>
+                <button
+                  onClick={() => setShowCenterPanel(!showCenterPanel)}
+                  title={showCenterPanel ? 'Hide Pathway (Center)' : 'Show Pathway (Center)'}
+                  style={{
+                    width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: showCenterPanel ? 'rgba(34, 197, 94, 0.3)' : 'transparent',
+                    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '16px', transition: 'all 0.2s'
+                  }}
+                >
+                  🗺️
+                </button>
+                <button
+                  onClick={() => setShowRightPanel(!showRightPanel)}
+                  title={showRightPanel ? 'Hide AI Panel (Right)' : 'Show AI Panel (Right)'}
+                  style={{
+                    width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: showRightPanel ? 'rgba(102, 126, 234, 0.3)' : 'transparent',
+                    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '16px', transition: 'all 0.2s'
+                  }}
+                >
+                  🤖
+                </button>
+              </div>
+            )}
+
+            {/* Session Actions */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '6px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <button
+                onClick={() => activeAnalysis && exportSession(activeAnalysis)}
+                disabled={!activeAnalysis}
+                title="Export Session (JSON / Markdown)"
+                style={{
+                  width: '32px', height: '32px', borderRadius: '6px',
+                  border: 'none',
+                  background: activeAnalysis ? 'rgba(59,130,246,0.18)' : 'transparent',
+                  color: activeAnalysis ? 'white' : 'var(--text-dim)',
+                  cursor: activeAnalysis ? 'pointer' : 'not-allowed', fontSize: '16px'
+                }}
               >
                 📥
+              </button>
+              <button
+                onClick={() => activeAnalysis && exportSessionAsInteractiveHtml(activeAnalysis)}
+                disabled={!activeAnalysis}
+                title="Export interactive HTML"
+                style={{
+                  width: '32px', height: '32px', borderRadius: '6px',
+                  border: 'none',
+                  background: activeAnalysis ? 'rgba(56,189,248,0.18)' : 'transparent',
+                  color: activeAnalysis ? 'white' : 'var(--text-dim)',
+                  cursor: activeAnalysis ? 'pointer' : 'not-allowed', fontSize: '16px'
+                }}
+              >
+                🌐
               </button>
               <button
                 onClick={async () => {
@@ -619,803 +871,890 @@ function App() {
                 }}
                 title="Import Session (JSON)"
                 style={{
-                  padding: '6px 12px',
-                  background: 'rgba(59, 130, 246, 0.1)',
-                  border: '1px solid rgba(59, 130, 246, 0.3)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '16px',
-                  transition: 'all 0.2s'
+                  width: '32px', height: '32px', borderRadius: '6px',
+                  border: 'none',
+                  background: 'rgba(34,197,94,0.18)',
+                  color: 'white', cursor: 'pointer', fontSize: '16px'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
               >
                 📤
               </button>
-            </>
-          )}
-        </div>
-      </header >
+            </div>
+          </div>
+        </header>
 
-      {/* Global Workflow Stepper */}
-      < WorkflowBreadcrumb
-        currentStep={workflowStep}
-        canAccessMapping={canAccessMapping}
-        canAccessViz={canAccessViz}
-        onStepClick={handleWorkflowStepClick}
-      />
+        {/* Horizontal Navigation Control (Workflow + Perspective) */}
+        <div
+          className="workbench-nav-bar"
+          data-tauri-drag-region="true"
+          style={{
+            WebkitAppRegion: 'drag',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 20px',
+            background: 'var(--bg-panel)',
+            borderBottom: '1px solid var(--border-subtle)',
+            gap: '20px'
+          } as any}>
+          <div style={{ flex: 1, maxWidth: '600px' }} data-tauri-drag-region="no-drag">
+            <WorkflowBreadcrumb
+              currentStep={workflowStep}
+              canAccessMapping={canAccessMapping}
+              canAccessViz={canAccessViz}
+              onStepClick={handleWorkflowStepClick}
+              variant="horizontal"
+            />
+          </div>
 
-      {/* Wizard Overlay for steps 1-3 (keeps state alive) */}
-      < div
-        className="wizard-overlay"
-        style={{ display: workflowStep === 'viz' ? 'none' : 'flex' }
-        }
-      >
-        <DataImportWizard
-          onComplete={handleAnalysisStart}
-          onCancel={() => { }}
-          addLog={addLog}
-          isConnected={isConnected}
-          sendCommand={sendCommand}
-          activeStep={wizardStep}
-          onStepChange={(s) => {
-            setWizardStep(s);
-            setMaxWizardStep(prev => (s > prev ? s : prev));
-            setWorkflowStep(s === 1 ? 'upload' : 'mapping');
-          }}
-          onConfigPreview={setDraftConfig}
-        />
-      </div >
-
-      {/* Workbench is always mounted; wizard hides it for steps 1-3 via display */}
-      < main
-        className="workbench-layout"
-        style={{
-          display: workflowStep === 'viz' ? 'grid' : 'none',
-          gridTemplateColumns: (() => {
-            // Calculate visible panel widths
-            const leftW = showLeftPanel ? colSizes[0] : 0;
-            const rightW = showRightPanel ? colSizes[2] : 0;
-            const centerW = showCenterPanel ? (100 - leftW - rightW) : 0;
-            const leftGutter = showLeftPanel && showCenterPanel ? '6px' : '0';
-            const rightGutter = showCenterPanel && showRightPanel ? '6px' : '0';
-            return `${leftW}% ${leftGutter} ${centerW}% ${rightGutter} ${rightW}%`;
-          })(),
-          gap: '0',
-          transition: dragIdx !== null ? 'none' : 'grid-template-columns 0.2s ease',
-        }}
-        ref={containerRef}
-      >
-        {/* Left Panel: Volcano / Data Table */}
-        < div className="panel-col" style={{
-          borderRight: showLeftPanel ? '1px solid var(--border-subtle)' : 'none',
-          overflow: 'hidden',
-          opacity: showLeftPanel ? 1 : 0,
-          transition: 'opacity 0.2s ease'
-        }}>
-          <div className="panel-header" style={{ justifyContent: 'space-between', paddingRight: '12px' }}>
-            <div className="left-panel-toggle-group">
+          {workflowStep === 'viz' && activeAnalysis && (
+            <div
+              className="perspective-toggles"
+              data-tauri-drag-region="no-drag"
+              style={{
+                display: 'flex',
+                gap: '4px',
+                padding: '4px',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)'
+              }}>
               <button
-                onClick={() => { setLeftView('chart'); setChartViewMode('volcano'); }}
-                className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'volcano' ? 'active' : ''}`}
-              >
-                Volcano
-              </button>
-              <button
+                className={`perspective-btn ${mainView === 'intelligence' ? 'active' : ''}`}
                 onClick={() => {
-                  if (!hasMAData) return;
-                  setLeftView('chart');
-                  setChartViewMode('ma');
+                  // Load intelligence data from active analysis if available
+                  if (activeAnalysis?.insights) {
+                    setStudioIntelligence(activeAnalysis.insights);
+                  }
+                  setMainView('intelligence');
                 }}
-                disabled={!hasMAData}
-                className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'ma' ? 'active' : ''}`}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: mainView === 'intelligence' ? 'var(--brand-primary)' : 'transparent',
+                  color: 'white',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
               >
-                MA
+                <span>🧠</span> Studio Discovery
               </button>
               <button
-                onClick={() => { setLeftView('chart'); setChartViewMode('ranked'); }}
-                className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'ranked' ? 'active' : ''}`}
+                className={`perspective-btn ${mainView === 'pathway' ? 'active' : ''}`}
+                onClick={() => setMainView('pathway')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: mainView === 'pathway' ? 'var(--brand-primary)' : 'transparent',
+                  color: 'white',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
               >
-                Ranked
-              </button>
-              <button
-                onClick={() => setLeftView('table')}
-                className={`left-toggle-btn ${leftView === 'table' ? 'active' : ''}`}
-              >
-                Table
+                <span>🗺️</span> Structural Map
               </button>
             </div>
+          )}
+        </div>
 
-            {filteredGenes.length > 0 && leftView === 'chart' && (
-              <span
-                style={{ fontSize: '11px', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline' }}
-                onClick={() => setFilteredGenes([])}
-              >
-                Clear ({filteredGenes.length})
-              </span>
-            )}
-          </div>
-          <div className="panel-body">
-            {activeAnalysis?.volcano_data ? (
-              leftView === 'chart' ? (
-                chartViewMode === 'ma' && !hasMAData ? (
-                  <div className="empty-state">
-                    Current data does not have mean expression values (e.g., BaseMean or Ctrl/Exp groups).
-                    MA plot is not supported. Please switch to Volcano or Ranked view.
-                  </div>
-                ) : (
-                  <VolcanoPlot
-                    data={activeAnalysis.volcano_data}
-                    viewMode={chartViewMode}
-                    onSelectionChange={setFilteredGenes}
-                    onPointClick={setActiveGene}
-                  />
-                )
-              ) : (
-                <DataTable
-                  data={activeAnalysis.volcano_data}
-                  onRowClick={setActiveGene}
-                  labels={entityLabels}
-                />
-              )
+        {/* Wizard Overlay (Integrated into workbench) */}
+        <div
+          className="wizard-overlay"
+          style={{ display: workflowStep === 'viz' ? 'none' : 'flex' }}
+        >
+          <DataImportWizard
+            onComplete={handleAnalysisStart}
+            onCancel={() => { }}
+            addLog={addLog}
+            isConnected={isConnected}
+            sendCommand={sendCommand}
+            activeStep={wizardStep}
+            onStepChange={(s) => {
+              setWizardStep(s);
+              setMaxWizardStep(prev => (s > prev ? s : prev));
+              setWorkflowStep(s === 1 ? 'upload' : 'mapping');
+            }}
+            onConfigPreview={setDraftConfig}
+            onLoadDemo={handleLoadDemoSession}
+            demoScript={demoScript}
+            demoTitle="Timecourse demo (Glycolysis)"
+          />
+        </div>
+
+        {/* Workbench is always mounted; wizard hides it for steps 1-3 via display */}
+        <main
+          className="workbench-layout"
+          style={{
+            display: workflowStep === 'viz' ? (mainView === 'intelligence' ? 'flex' : 'grid') : 'none',
+            gridTemplateColumns: mainView === 'intelligence' ? '1fr' : (() => {
+              const rawLeft = showLeftPanel ? colSizes[0] : 0;
+              const rawCenter = showCenterPanel ? colSizes[1] : 0;
+              const rawRight = showRightPanel ? colSizes[2] : 0;
+              const total = rawLeft + rawCenter + rawRight || 1;
+              const scale = 100 / total;
+              const leftW = rawLeft * scale;
+              const centerW = rawCenter * scale;
+              const rightW = rawRight * scale;
+              const leftGutter = (leftW > 0 && centerW > 0) ? '6px' : '0';
+              const rightGutter = (centerW > 0 && rightW > 0) ? '6px' : '0';
+              return `${leftW}% ${leftGutter} ${centerW}% ${rightGutter} ${rightW}%`;
+            })(),
+            gap: '0',
+            transition: dragIdx !== null ? 'none' : 'grid-template-columns 0.2s ease',
+            position: 'relative'
+          }}
+          ref={containerRef}
+        >
+          {mainView === 'intelligence' ? (
+            studioIntelligence ? (
+              <IntelligenceDashboard
+                data={studioIntelligence}
+                onClose={() => setMainView('pathway')}
+                onGenerateSuperNarrative={handleGenerateSuperNarrative}
+                isGenerating={isGeneratingStudioReport}
+              />
             ) : (
-              <div className="empty-state">
-                No Data Loaded
+              // Empty state when no intelligence data
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '40px',
+                background: 'var(--bg-panel)',
+                color: 'var(--text-secondary)'
+              }}>
+                <div style={{ fontSize: '64px', marginBottom: '24px' }}>🧠</div>
+                <h2 style={{ fontSize: '24px', marginBottom: '12px', color: 'var(--text-primary)' }}>
+                  Studio Discovery
+                </h2>
+                <p style={{ fontSize: '14px', marginBottom: '32px', maxWidth: '500px', textAlign: 'center', lineHeight: 1.6 }}>
+                  Run AI Deep Insight analysis from the Gene Sets panel to unlock the 7-layer intelligence dashboard.
+                </p>
+                <button
+                  onClick={() => {
+                    setMainView('pathway');
+                    setRightPanelView('enrichment');
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'var(--brand-primary)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>🧬</span> Open Gene Sets Panel
+                </button>
               </div>
-            )}
-          </div>
-        </div >
+            )
+          ) : (
+            <>
+              {/* Left Panel: Volcano / Data Table */}
+              < div className="panel-col" style={{
+                borderRight: showLeftPanel ? '1px solid var(--border-subtle)' : 'none',
+                overflow: 'hidden',
+                opacity: showLeftPanel ? 1 : 0,
+                transition: 'opacity 0.2s ease'
+              }}>
+                <div className="panel-header" style={{ justifyContent: 'space-between', paddingRight: '12px' }}>
+                  <div className="left-panel-toggle-group">
+                    <button
+                      onClick={() => { setLeftView('chart'); setChartViewMode('volcano'); }}
+                      className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'volcano' ? 'active' : ''}`}
+                    >
+                      Volcano
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!hasMAData) return;
+                        setLeftView('chart');
+                        setChartViewMode('ma');
+                      }}
+                      disabled={!hasMAData}
+                      className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'ma' ? 'active' : ''}`}
+                    >
+                      MA
+                    </button>
+                    <button
+                      onClick={() => { setLeftView('chart'); setChartViewMode('ranked'); }}
+                      className={`left-toggle-btn ${leftView === 'chart' && chartViewMode === 'ranked' ? 'active' : ''}`}
+                    >
+                      Ranked
+                    </button>
+                    <button
+                      onClick={() => setLeftView('table')}
+                      className={`left-toggle-btn ${leftView === 'table' ? 'active' : ''}`}
+                    >
+                      Table
+                    </button>
+                  </div>
 
-        {/* Resizer 1 */}
-        < div
-          className={`resizer-gutter ${dragIdx === 0 ? 'dragging' : ''}`}
-          onMouseDown={(e) => startResize(0, e)}
-        />
+                  {filteredGenes.length > 0 && leftView === 'chart' && (
+                    <span
+                      style={{ fontSize: '11px', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={() => setFilteredGenes([])}
+                    >
+                      Clear ({filteredGenes.length})
+                    </span>
+                  )}
+                </div>
+                <div className="panel-body">
+                  {activeAnalysis?.volcano_data ? (
+                    leftView === 'chart' ? (
+                      chartViewMode === 'ma' && !hasMAData ? (
+                        <div className="empty-state">
+                          Current data does not have mean expression values (e.g., BaseMean or Ctrl/Exp groups).
+                          MA plot is not supported. Please switch to Volcano or Ranked view.
+                        </div>
+                      ) : (
+                        <VolcanoPlot
+                          data={activeAnalysis.volcano_data}
+                          viewMode={chartViewMode}
+                          onSelectionChange={setFilteredGenes}
+                          onPointClick={setActiveGene}
+                        />
+                      )
+                    ) : (
+                      <DataTable
+                        data={activeAnalysis.volcano_data}
+                        onRowClick={setActiveGene}
+                        labels={entityLabels}
+                      />
+                    )
+                  ) : (
+                    <div className="empty-state">
+                      No Data Loaded
+                    </div>
+                  )}
+                </div>
+              </div >
 
-        {/* Center Panel: Pathway */}
-        <div className="panel-col" style={{
-          background: 'var(--bg-panel)',
-          overflow: 'hidden',
-          opacity: showCenterPanel ? 1 : 0,
-          transition: 'opacity 0.2s ease'
-        }}>
-          <div className="panel-header">
-            <span>Pathway Landscape</span>
+              {/* Resizer 1 */}
+              < div
+                className={`resizer-gutter ${dragIdx === 0 ? 'dragging' : ''}`}
+                onMouseDown={(e) => startResize(0, e)}
+              />
 
-            {/* Header Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {/* Empty left side or title? Title is already "Pathway Landscape" outside this div? */
+              {/* Center Panel: Pathway */}
+              <div className="panel-col" style={{
+                background: 'var(--bg-panel)',
+                overflow: 'hidden',
+                opacity: showCenterPanel ? 1 : 0,
+                transition: 'opacity 0.2s ease'
+              }}>
+                <div className="panel-header">
+                  <span>Pathway Landscape</span>
+
+                  {/* Header Controls */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {/* Empty left side or title? Title is already "Pathway Landscape" outside this div? */
                         /* Actually the "Pathway Landscape" text is inside the panel-header but outside this Flex container? */
                         /* Let's double check lines 477-482 in previous code view */
                         /* Line 477: <span>Pathway Landscape</span> */
                         /* Line 481: <div ... justifyContent: 'space-between' ...> */
                         /* So simply removing the stats div works. */}
-              </div>
+                    </div>
 
-              {/* Right Actions: Toolbar */}
-              {activeAnalysis && (
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button
-                    onClick={() => vizRef.current?.resetView()}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px'
-                    }}
-                    title="Reset View"
-                  >
-                    <span>🔄</span> Reset
-                  </button>
+                    {/* Right Actions: Toolbar */}
+                    {activeAnalysis && (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          onClick={() => vizRef.current?.resetView()}
+                          className="viz-tool-btn"
+                          style={{
+                            height: '28px',
+                            padding: '0 12px',
+                            fontSize: '12px',
+                            gap: '6px'
+                          }}
+                          title="Reset View"
+                        >
+                          <span>🔄</span> Reset
+                        </button>
 
-                  {/* Divider */}
-                  <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+                        {/* Divider */}
+                        <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
 
-                  <button
-                    onClick={() => vizRef.current?.exportPNG()}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px'
-                    }}
-                    title="Export as PNG (Bitmap)"
-                  >
-                    <span>🖼️</span> PNG
-                  </button>
-                  <button
-                    onClick={() => vizRef.current?.exportSVG()}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px',
-                      opacity: !isPro ? 0.6 : 1
-                    }}
-                    title={!isPro ? "SVG (Pro Only)" : "Export as SVG"}
-                  >
-                    {isPro ? <span>📥</span> : <span>🔒</span>} SVG
-                  </button>
+                        <button
+                          onClick={() => vizRef.current?.exportPNG()}
+                          className="viz-tool-btn"
+                          style={{
+                            height: '28px',
+                            padding: '0 12px',
+                            fontSize: '12px',
+                            gap: '6px'
+                          }}
+                          title="Export as PNG (Bitmap)"
+                        >
+                          <span>🖼️</span> PNG
+                        </button>
+                        <button
+                          onClick={() => vizRef.current?.exportSVG()}
+                          className="viz-tool-btn"
+                          style={{
+                            height: '28px',
+                            padding: '0 12px',
+                            fontSize: '12px',
+                            gap: '6px',
+                            opacity: !isPro ? 0.6 : 1
+                          }}
+                          title={!isPro ? "SVG (Pro Only)" : "Export as SVG"}
+                        >
+                          {isPro ? <span>📥</span> : <span>🔒</span>} SVG
+                        </button>
 
-                  <button
-                    onClick={() => vizRef.current?.exportPPTX()}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px'
-                    }}
-                    title="Export as PowerPoint"
-                  >
-                    <span>📊</span> PPTX
-                  </button>
+                        <button
+                          onClick={() => vizRef.current?.exportPPTX()}
+                          className="viz-tool-btn"
+                          style={{
+                            height: '28px',
+                            padding: '0 12px',
+                            fontSize: '12px',
+                            gap: '6px'
+                          }}
+                          title="Export as PowerPoint"
+                        >
+                          <span>📊</span> PPTX
+                        </button>
 
-                  {/* Divider */}
-                  <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+                        {/* Divider */}
+                        <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
 
 
 
-                  <button
-                    onClick={async () => {
-                      if (!isPro) {
-                        alert("Data Preservation is a Pro feature.\n\nFree version (simulated) allows viewing but not saving result tables.");
-                        // In real app, block here. For simulation, proceed or return? 
-                        // Prompt implies toggle acts as sim. If Free, let's block to show feature gating.
-                        return;
-                      }
+                        <button
+                          onClick={async () => {
+                            if (!isPro) {
+                              alert("Data Preservation is a Pro feature.\n\nFree version (simulated) allows viewing but not saving result tables.");
+                              // In real app, block here. For simulation, proceed or return? 
+                              // Prompt implies toggle acts as sim. If Free, let's block to show feature gating.
+                              return;
+                            }
 
-                      try {
-                        // 1. Open Save Dialog
-                        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
-                        const suggestedName = `${uploadedFileBase}_stat_${timestamp}.csv`;
-                        const path = await save({
-                          defaultPath: suggestedName,
-                          filters: [{
-                            name: 'CSV File',
-                            extensions: ['csv']
-                          }]
-                        });
+                            try {
+                              // 1. Open Save Dialog
+                              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+                              const suggestedName = `${uploadedFileBase}_stat_${timestamp}.csv`;
+                              const path = await save({
+                                defaultPath: suggestedName,
+                                filters: [{
+                                  name: 'CSV File',
+                                  extensions: ['csv']
+                                }]
+                              });
 
-                        if (!path) return; // User cancelled
+                              if (!path) return; // User cancelled
 
-                        // 2. Build CSV content on the client side
-                        // NOTE: Column 3 header intentionally avoids starting with '-' or '='
-                        // to prevent Excel from auto-interpreting it as a formula.
-                        const header = ['Gene', 'Log2FC', 'neg_log10(P)', 'PValue', 'Status', 'Mean'];
-                        const escape = (v: unknown): string => {
-                          if (v === null || v === undefined) return '';
-                          const s = String(v);
-                          if (s.includes('"') || s.includes(',') || s.includes('\n')) {
-                            return `"${s.replace(/"/g, '""')}"`;
-                          }
-                          return s;
-                        };
-                        const lines = [
-                          header.join(','),
-                          ...activeAnalysis.volcano_data.map(p => [
-                            escape(p.gene),
-                            escape(p.x),
-                            escape(p.y),
-                            escape(p.pvalue),
-                            escape(p.status),
-                            escape(p.mean)
-                          ].join(','))
-                        ];
-                        const csvContent = lines.join('\n');
+                              // 2. Build CSV content on the client side
+                              // NOTE: Column 3 header intentionally avoids starting with '-' or '='
+                              // to prevent Excel from auto-interpreting it as a formula.
+                              const header = ['Gene', 'Log2FC', 'neg_log10(P)', 'PValue', 'Status', 'Mean'];
+                              const escape = (v: unknown): string => {
+                                if (v === null || v === undefined) return '';
+                                const s = String(v);
+                                if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+                                  return `"${s.replace(/"/g, '""')}"`;
+                                }
+                                return s;
+                              };
+                              const lines = [
+                                header.join(','),
+                                ...activeAnalysis.volcano_data.map(p => [
+                                  escape(p.gene),
+                                  escape(p.x),
+                                  escape(p.y),
+                                  escape(p.pvalue),
+                                  escape(p.status),
+                                  escape(p.mean)
+                                ].join(','))
+                              ];
+                              const csvContent = lines.join('\n');
 
-                        // 3. Write CSV file using Tauri FS plugin
-                        await writeTextFile(path, csvContent);
+                              // 3. Write CSV file using Tauri FS plugin
+                              await writeTextFile(path, csvContent);
 
-                        // 4. Confirm & Open
-                        const shouldOpen = await ask(`Data saved successfully to:\n${path}\n\nDo you want to open it now?`, {
-                          title: 'Save Successful',
-                          kind: 'info',
-                          okLabel: 'Open File',
-                          cancelLabel: 'Close'
-                        });
+                              // 4. Confirm & Open
+                              const shouldOpen = await ask(`Data saved successfully to:\n${path}\n\nDo you want to open it now?`, {
+                                title: 'Save Successful',
+                                kind: 'info',
+                                okLabel: 'Open File',
+                                cancelLabel: 'Close'
+                              });
 
-                        if (shouldOpen) {
-                          try {
-                            await openPath(path);
-                          } catch (e) {
-                            alert("Failed to open file: " + e);
-                          }
-                        }
+                              if (shouldOpen) {
+                                try {
+                                  await openPath(path);
+                                } catch (e) {
+                                  alert("Failed to open file: " + e);
+                                }
+                              }
 
-                      } catch (e) {
-                        alert("Failed to save data: " + e);
-                      }
-                    }}
-                    className="viz-tool-btn"
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '12px',
-                      gap: '6px',
-                      borderRadius: '4px',
-                      background: 'transparent',
-                      border: '1px solid var(--border-subtle)',
-                      color: isPro ? 'var(--text-secondary)' : 'var(--text-dim)',
-                      opacity: isPro ? 1 : 0.7
-                    }}
-                  >
-                    {isPro ? <span>📂</span> : <span>🔒</span>} Data
-                  </button>
+                            } catch (e) {
+                              alert("Failed to save data: " + e);
+                            }
+                          }}
+                          className="viz-tool-btn"
+                          style={{
+                            height: '28px',
+                            padding: '0 12px',
+                            fontSize: '12px',
+                            gap: '6px',
+                            borderRadius: '4px',
+                            background: 'transparent',
+                            border: '1px solid var(--border-subtle)',
+                            color: isPro ? 'var(--text-secondary)' : 'var(--text-dim)',
+                            opacity: isPro ? 1 : 0.7
+                          }}
+                        >
+                          {isPro ? <span>📂</span> : <span>🔒</span>} Data
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
 
-          <div className="panel-body" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            <ResultTabs
-              tabs={resultTabs}
-              activeIndex={activeResultIndex}
-              onSelect={handleSelectResult}
-            />
+                <div className="panel-body" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                  <ResultTabs
+                    tabs={resultTabs}
+                    activeIndex={activeResultIndex}
+                    onSelect={handleSelectResult}
+                  />
 
-            {(engineLoading || batchRunning) && (
-              <div style={{
-                position: 'absolute', inset: 0, zIndex: 50,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)'
-              }}>
-                <div className="spinner" style={{ marginBottom: '16px' }}></div>
-                <p style={{ color: 'white' }}>Processing Analysis...</p>
-              </div>
-            )}
-
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              {activeAnalysis && activeAnalysis.pathway ? (
-                <>
-                  {/* AI Insights */}
-                  {activeAnalysis.insights && (
-                    <InsightBadges insights={activeAnalysis.insights} />
+                  {(engineLoading || batchRunning) && (
+                    <div style={{
+                      position: 'absolute', inset: 0, zIndex: 50,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)'
+                    }}>
+                      <div className="spinner" style={{ marginBottom: '16px' }}></div>
+                      <p style={{ color: 'white' }}>Processing Analysis...</p>
+                    </div>
                   )}
 
-                  {/* Pathway Visualization */}
-                  <div style={{ flex: 1, minHeight: 0 }}>
-                    <PathwayVisualizer
-                      ref={vizRef}
-                      nodes={activeAnalysis.pathway.nodes}
-                      edges={activeAnalysis.pathway.edges}
-                      title={activeAnalysis.pathway.title || activeAnalysis.pathway.name}
-                      pathwayId={activeAnalysis.pathway.id}
-                      dataType={activeAnalysis.entityKind}
-                      onNodeClick={handlePathwayNodeClick}
-                      selectedNodeNames={filteredGenes}
-                      isPro={isPro}
-                      sourceFileBase={uploadedFileBase}
-                      enrichrResults={activeAnalysis.enrichrResults}
-                      gseaResults={activeAnalysis.gseaResults}
-                    />
+                  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    {activeAnalysis && activeAnalysis.pathway ? (
+                      <>
+                        {/* AI Insights */}
+                        {activeAnalysis.insights && (
+                          <InsightBadges insights={activeAnalysis.insights} />
+                        )}
+
+                        {/* Pathway Visualization */}
+                        <div style={{ flex: 1, minHeight: 0 }}>
+                          <PathwayVisualizer
+                            ref={vizRef}
+                            nodes={activeAnalysis.pathway.nodes}
+                            edges={activeAnalysis.pathway.edges}
+                            title={activeAnalysis.pathway.title || activeAnalysis.pathway.name}
+                            pathwayId={activeAnalysis.pathway.id}
+                            dataType={activeAnalysis.entityKind}
+                            onNodeClick={handlePathwayNodeClick}
+                            selectedNodeNames={filteredGenes}
+                            isPro={isPro}
+                            sourceFileBase={uploadedFileBase}
+                            enrichrResults={activeAnalysis.enrichrResults}
+                            gseaResults={activeAnalysis.gseaResults}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
+                        <TemplatePicker
+                          onSelect={(id) => {
+                            const cfg = activeAnalysis?.config || draftConfig;
+                            if (cfg) {
+                              handleAnalysisStart({ ...cfg, pathwayId: id });
+                            }
+                          }}
+                          dataType={
+                            ((activeAnalysis?.entityKind as any) === 'other' ? 'gene' : (activeAnalysis?.entityKind as any)) ||
+                            (((draftConfig?.dataType as any) === 'other' ? 'gene' : (draftConfig?.dataType as any)) || 'gene')
+                          }
+                          sendCommand={sendCommand}
+                        />
+                      </div>
+                    )}
                   </div>
-                </>
-              ) : (
-                <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
-                  <TemplatePicker
-                    onSelect={(id) => {
-                      const cfg = activeAnalysis?.config || draftConfig;
-                      if (cfg) {
-                        handleAnalysisStart({ ...cfg, pathwayId: id });
-                      }
-                    }}
-                    dataType={
-                      ((activeAnalysis?.entityKind as any) === 'other' ? 'gene' : (activeAnalysis?.entityKind as any)) ||
-                      (((draftConfig?.dataType as any) === 'other' ? 'gene' : (draftConfig?.dataType as any)) || 'gene')
-                    }
-                    sendCommand={sendCommand}
-                  />
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
+              </div>
 
-        {/* Resizer 2 */}
-        <div
-          className={`resizer-gutter ${dragIdx === 1 ? 'dragging' : ''}`}
-          onMouseDown={(e) => startResize(1, e)}
-        />
+              {/* Resizer 2 */}
+              <div
+                className={`resizer-gutter ${dragIdx === 1 ? 'dragging' : ''}`}
+                onMouseDown={(e) => startResize(1, e)}
+              />
 
-        {/* Right Panel: AI Chat */}
-        <div className="panel-col" style={{
-          overflow: 'hidden',
-          opacity: showRightPanel ? 1 : 0,
-          transition: 'opacity 0.2s ease'
+              {/* Right Panel: AI Chat */}
+              <div className="panel-col" style={{
+                overflow: 'hidden',
+                opacity: showRightPanel ? 1 : 0,
+                transition: 'opacity 0.2s ease'
+              }}>
+                <div className="panel-header" style={{ display: 'flex', gap: '8px', padding: '8px 12px' }}>
+                  <button
+                    onClick={() => setRightPanelView('ai-chat')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: rightPanelView === 'ai-chat' ? 'var(--brand-primary)' : 'transparent',
+                      color: rightPanelView === 'ai-chat' ? 'white' : 'var(--text-dim)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500
+                    }}
+                  >
+                    🤖 AI Chat
+                  </button>
+                  <button
+                    onClick={() => setRightPanelView('de-analysis')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: rightPanelView === 'de-analysis' ? 'var(--brand-primary)' : 'transparent',
+                      color: rightPanelView === 'de-analysis' ? 'white' : 'var(--text-dim)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500
+                    }}
+                    title="DE Analysis"
+                  >
+                    🧪 DE Analysis
+                  </button>
+                  <button
+                    onClick={() => setRightPanelView('enrichment')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: rightPanelView === 'enrichment' ? 'var(--brand-primary)' : 'transparent',
+                      color: rightPanelView === 'enrichment' ? 'white' : 'var(--text-dim)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500
+                    }}
+                    title="Gene Set Enrichment (ORA & GSEA)"
+                  >
+                    🧬 Gene Sets
+                  </button>
+                  <button
+                    onClick={() => setRightPanelView('images')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: rightPanelView === 'images' ? 'var(--brand-primary)' : 'transparent',
+                      color: rightPanelView === 'images' ? 'white' : 'var(--text-dim)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500
+                    }}
+                  >
+                    🖼️ Images
+                  </button>
+                  <button
+                    onClick={() => setRightPanelView('multi-sample')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: rightPanelView === 'multi-sample' ? 'var(--brand-primary)' : 'transparent',
+                      color: rightPanelView === 'multi-sample' ? 'white' : 'var(--text-dim)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500
+                    }}
+                  >
+                    🔄 Multi
+                  </button>
+                </div>
+                <div className="panel-body">
+                  {rightPanelView === 'ai-chat' && (
+                    <AIChatPanel
+                      sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
+                      isConnected={isConnected}
+                      lastResponse={lastResponse}
+                      analysisContext={activeAnalysis ? {
+                        pathway: activeAnalysis.pathway,
+                        volcanoData: activeAnalysis.volcano_data,
+                        statistics: activeAnalysis.statistics
+                      } : undefined}
+                      chatHistory={activeAnalysis?.chatHistory || []}
+                      onChatUpdate={(messages) => {
+                        if (activeAnalysis) {
+                          setAnalysisResults(prev => {
+                            const updated = [...prev];
+                            if (updated[activeResultIndex]) {
+                              updated[activeResultIndex] = {
+                                ...updated[activeResultIndex],
+                                chatHistory: messages
+                              };
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                      onNavigateToGSEA={() => setRightPanelView('enrichment')}
+                    />
+                  )}
+
+                  {rightPanelView === 'de-analysis' && (
+                    <DEAnalysisPanel
+                      sendCommand={sendCommand}
+                      isConnected={isConnected}
+                      lastResponse={lastResponse}
+                      currentFilePath={activeAnalysis?.sourceFilePath}
+                      onAnalysisComplete={handleDEAnalysisComplete}
+                      onReset={handleResetDE}
+                    />
+                  )}
+
+                  {rightPanelView === 'enrichment' && (
+                    <EnrichmentPanel
+                      volcanoData={activeAnalysis?.volcano_data}
+                      onEnrichmentComplete={handleEnrichmentComplete}
+                      onPathwayClick={async (pathwayNameOrId, source, metadata) => {
+                        console.log(`Pathway clicked: ${pathwayNameOrId} (${source})`, metadata);
+                        addLog(`🔍 Loading pathway: ${pathwayNameOrId}`);
+
+                        try {
+                          // For Reactome, we need to search first
+                          if (source === 'reactome') {
+                            const response = await sendCommand(
+                              'SEARCH_AND_LOAD_PATHWAY',
+                              {
+                                pathway_name: pathwayNameOrId,
+                                source: source,
+                                species: 'human'
+                              },
+                              true
+                            );
+
+                            if (response?.status === 'ok' && response.pathway) {
+                              addLog(`✓ Found: ${response.pathway_name} (${response.gene_count} genes)`);
+                              setAnalysisResults(prev => prev.map((item, idx) =>
+                                idx === activeResultIndex
+                                  ? { ...item, pathway: response.pathway as any }
+                                  : item
+                              ));
+                              setMainView('pathway');
+                            } else {
+                              addLog(`❌ Pathway not found: ${pathwayNameOrId}`);
+                            }
+                          } else {
+                            // WikiPathways, GO, Custom: Visualize directly in app using auto-layout
+                            if (activeAnalysis?.volcano_data) {
+                              // Validate pathway ID before proceeding
+                              if (!pathwayNameOrId || pathwayNameOrId.trim() === '') {
+                                addLog(`❌ Invalid pathway ID: "${pathwayNameOrId}"`);
+                                console.error('Pathway click failed: missing pathway ID', { source, metadata });
+                                return;
+                              }
+
+                              addLog(`🎨 Generating ${source} pathway diagram for: ${pathwayNameOrId}...`);
+
+                              // Extract gene expression from current volcano data
+                              const geneExpression: Record<string, number> = {};
+                              activeAnalysis.volcano_data.forEach((p: any) => {
+                                // Important: Use p.x which is LogFC in the frontend model
+                                if (p.gene && p.x !== undefined) {
+                                  geneExpression[p.gene] = p.x;
+                                }
+                              });
+
+                              const response = await sendCommand(
+                                'VISUALIZE_PATHWAY',
+                                {
+                                  template_id: pathwayNameOrId.trim(),
+                                  pathway_source: source,
+                                  pathway_name: metadata?.pathway_name || pathwayNameOrId,
+                                  hit_genes: metadata?.hit_genes || [],
+                                  gene_expression: geneExpression,
+                                  data_type: activeAnalysis.entityKind === 'other' ? 'gene' : activeAnalysis.entityKind
+                                },
+                                true
+                              );
+
+                              if (response?.status === 'ok' && response.pathway) {
+                                addLog(`✓ Pathway diagram generated (${response.gene_count} genes)`);
+
+                                // Update analysis results with the generated pathway
+                                setAnalysisResults(prev => prev.map((item, idx) =>
+                                  idx === activeResultIndex
+                                    ? {
+                                      ...item,
+                                      pathway: response.pathway as any,
+                                      statistics: response.statistics as any
+                                    }
+                                    : item
+                                ));
+
+                                // Switch to center pathway view
+                                setMainView('pathway');
+                              } else {
+                                addLog(`❌ Failed to generate diagram: ${response?.message || 'Unknown error'}`);
+                              }
+                            } else {
+                              addLog(`❌ No data available for visualization`);
+                            }
+                          }
+                        } catch (err) {
+                          console.error('Failed to load pathway:', err);
+                          addLog(`❌ Error: ${err}`);
+                        }
+                      }}
+                    />
+                  )}
+
+                  {rightPanelView === 'images' && (
+                    <ImageUploader
+                      sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
+                      isConnected={isConnected}
+                    />
+                  )}
+                  {rightPanelView === 'multi-sample' && (
+                    <MultiSamplePanel
+                      sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
+                      isConnected={isConnected}
+                      currentFilePath={activeAnalysis?.sourceFilePath}
+                      lastResponse={lastResponse}
+                      onSampleGroupChange={(groupName, groupData) => {
+                        // When sample group changes, update the volcano data for pathway visualization
+                        if (activeAnalysis && groupData.length > 0) {
+                          // Convert multi-sample group data to volcano format
+                          const newVolcanoData = groupData.map(d => ({
+                            gene: d.gene,
+                            x: d.logfc,
+                            y: -Math.log10(d.pvalue),
+                            pvalue: d.pvalue,
+                            status: d.logfc > 0 && d.pvalue < 0.05 ? 'UP' as const :
+                              (d.logfc < 0 && d.pvalue < 0.05 ? 'DOWN' as const : 'NS' as const)
+                          }));
+
+                          // Update the active analysis with new volcano data
+                          setAnalysisResults(prev => {
+                            const updated = [...prev];
+                            if (updated[activeResultIndex]) {
+                              updated[activeResultIndex] = {
+                                ...updated[activeResultIndex],
+                                volcano_data: newVolcanoData,
+                                // Note: Don't modify sourceFilePath to avoid file loading errors
+                              };
+                            }
+                            return updated;
+                          });
+
+                          addLog(`📊 Switched to sample group: ${groupName} (${groupData.length} genes)`);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Evidence Popup Overlay */}
+              {
+                showEvidencePopup && activeGene && (
+                  <EvidencePopup
+                    gene={activeGene}
+                    geneData={activeGeneDetail}
+                    entityKind={entityKind}
+                    labels={entityLabels}
+                    onClose={() => {
+                      setShowEvidencePopup(false);
+                      setActiveGene(null);
+                    }}
+                  />
+                )
+              }
+
+            </>
+          )}
+        </main>
+
+        {/* Footer / Logs */}
+        <footer style={{
+          height: '30px',
+          background: 'var(--bg-panel)',
+          borderTop: '1px solid var(--border-subtle)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 12px', fontSize: '11px', color: 'var(--text-dim)',
+          flexShrink: 0
         }}>
-          <div className="panel-header" style={{ display: 'flex', gap: '8px', padding: '8px 12px' }}>
-            <button
-              onClick={() => setRightPanelView('ai-chat')}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: rightPanelView === 'ai-chat' ? 'var(--brand-primary)' : 'transparent',
-                color: rightPanelView === 'ai-chat' ? 'white' : 'var(--text-dim)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 500
-              }}
-            >
-              🤖 AI Chat
-            </button>
-            <button
-              onClick={() => setRightPanelView('de-analysis')}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: rightPanelView === 'de-analysis' ? 'var(--brand-primary)' : 'transparent',
-                color: rightPanelView === 'de-analysis' ? 'white' : 'var(--text-dim)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 500
-              }}
-              title="DE Analysis"
-            >
-              🧪 DE Analysis
-            </button>
-            <button
-              onClick={() => setRightPanelView('enrichment')}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: rightPanelView === 'enrichment' ? 'var(--brand-primary)' : 'transparent',
-                color: rightPanelView === 'enrichment' ? 'white' : 'var(--text-dim)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 500
-              }}
-              title="Gene Set Enrichment (ORA & GSEA)"
-            >
-              🧬 Gene Sets
-            </button>
-            <button
-              onClick={() => setRightPanelView('images')}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: rightPanelView === 'images' ? 'var(--brand-primary)' : 'transparent',
-                color: rightPanelView === 'images' ? 'white' : 'var(--text-dim)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 500
-              }}
-            >
-              🖼️ Images
-            </button>
-            <button
-              onClick={() => setRightPanelView('multi-sample')}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: rightPanelView === 'multi-sample' ? 'var(--brand-primary)' : 'transparent',
-                color: rightPanelView === 'multi-sample' ? 'white' : 'var(--text-dim)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 500
-              }}
-            >
-              🔄 Multi
-            </button>
+          <div>BioViz Local v1.0.0 • Workbench Mode</div>
+          <div style={{ display: 'flex', gap: '8px', maxWidth: '500px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ color: 'var(--brand-primary)' }}>Last:</span> {logs.length > 0 ? logs[logs.length - 1] : 'Ready'}
           </div>
-          <div className="panel-body">
-            {rightPanelView === 'ai-chat' && (
-              <AIChatPanel
-                sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
-                isConnected={isConnected}
-                lastResponse={lastResponse}
-                analysisContext={activeAnalysis ? {
-                  pathway: activeAnalysis.pathway,
-                  volcanoData: activeAnalysis.volcano_data,
-                  statistics: activeAnalysis.statistics
-                } : undefined}
-                chatHistory={activeAnalysis?.chatHistory || []}
-                onChatUpdate={(messages) => {
-                  if (activeAnalysis) {
-                    setAnalysisResults(prev => {
-                      const updated = [...prev];
-                      if (updated[activeResultIndex]) {
-                        updated[activeResultIndex] = {
-                          ...updated[activeResultIndex],
-                          chatHistory: messages
-                        };
-                      }
-                      return updated;
-                    });
-                  }
-                }}
-                onNavigateToGSEA={() => setRightPanelView('enrichment')}
-              />
-            )}
-
-            {rightPanelView === 'de-analysis' && (
-              <DEAnalysisPanel
-                sendCommand={sendCommand}
-                isConnected={isConnected}
-                lastResponse={lastResponse}
-                currentFilePath={activeAnalysis?.sourceFilePath}
-                onAnalysisComplete={handleDEAnalysisComplete}
-                onReset={handleResetDE}
-              />
-            )}
-
-            {rightPanelView === 'enrichment' && (
-              <EnrichmentPanel
-                volcanoData={activeAnalysis?.volcano_data}
-                onEnrichmentComplete={(results) => {
-                  console.log('Enrichment v2.0 results:', results);
-                }}
-                onPathwayClick={async (pathwayNameOrId, source) => {
-                  console.log(`Pathway clicked: ${pathwayNameOrId} (${source})`);
-                  addLog(`🔍 Loading pathway: ${pathwayNameOrId}`);
-
-                  try {
-                    // Call backend to search and load pathway
-                    const response = await sendCommand(
-                      'SEARCH_AND_LOAD_PATHWAY',
-                      {
-                        pathway_name: pathwayNameOrId,
-                        source: source,
-                        species: 'human'
-                      },
-                      true // wait for pathway payload
-                    );
-
-                    if (response?.status === 'ok' && response.pathway) {
-                      addLog(`✓ Found: ${response.pathway_name} (${response.gene_count} genes)`);
-
-                      // Update active analysis with the loaded pathway
-                      setAnalysisResults(prev => prev.map((item, idx) =>
-                        idx === activeResultIndex
-                          ? { ...item, pathway: response.pathway as any }
-                          : item
-                      ));
-
-                      // Switch to pathway view (center panel)
-                      // User can see the pathway visualization
-                    } else if (response?.suggest_external) {
-                      // For sources without diagram support (GO BP, WikiPathways)
-                      addLog(`ℹ️ ${response.message || 'No diagram available'}`);
-                      window.open(response.suggest_external as string, '_blank');
-                    } else {
-                      addLog(`❌ ${response?.message || 'Failed to load pathway'}`);
-                    }
-                  } catch (err) {
-                    console.error('Failed to load pathway:', err);
-                    addLog(`❌ Error loading pathway: ${err}`);
-                  }
-                }}
-              />
-            )}
-
-            {rightPanelView === 'images' && (
-              <ImageUploader
-                sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
-                isConnected={isConnected}
-              />
-            )}
-            {rightPanelView === 'multi-sample' && (
-              <MultiSamplePanel
-                sendCommand={async (cmd, data) => { await sendCommand(cmd, data, false); }}
-                isConnected={isConnected}
-                currentFilePath={activeAnalysis?.sourceFilePath}
-                lastResponse={lastResponse}
-                onSampleGroupChange={(groupName, groupData) => {
-                  // When sample group changes, update the volcano data for pathway visualization
-                  if (activeAnalysis && groupData.length > 0) {
-                    // Convert multi-sample group data to volcano format
-                    const newVolcanoData = groupData.map(d => ({
-                      gene: d.gene,
-                      x: d.logfc,
-                      y: -Math.log10(d.pvalue),
-                      pvalue: d.pvalue,
-                      status: d.logfc > 0 && d.pvalue < 0.05 ? 'UP' as const :
-                        (d.logfc < 0 && d.pvalue < 0.05 ? 'DOWN' as const : 'NS' as const)
-                    }));
-
-                    // Update the active analysis with new volcano data
-                    setAnalysisResults(prev => {
-                      const updated = [...prev];
-                      if (updated[activeResultIndex]) {
-                        updated[activeResultIndex] = {
-                          ...updated[activeResultIndex],
-                          volcano_data: newVolcanoData,
-                          // Note: Don't modify sourceFilePath to avoid file loading errors
-                        };
-                      }
-                      return updated;
-                    });
-
-                    addLog(`📊 Switched to sample group: ${groupName} (${groupData.length} genes)`);
-                  }
-                }}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Evidence Popup Overlay */}
-        {
-          showEvidencePopup && activeGene && (
-            <EvidencePopup
-              gene={activeGene}
-              geneData={activeGeneDetail}
-              entityKind={entityKind}
-              labels={entityLabels}
-              onClose={() => {
-                setShowEvidencePopup(false);
-                setActiveGene(null);
-              }}
-            />
-          )
-        }
-
-        {/* Floating Panel Toggle Buttons - Draggable */}
-        <div
-          style={{
-            position: 'fixed',
-            left: toolbarPos.x,
-            top: toolbarPos.y, // Use top instead of bottom
-            display: 'flex',
-            flexDirection: 'row', // Horizontal!
-            gap: '8px',
-            background: 'rgba(11, 14, 20, 0.95)',
-            padding: '8px',
-            borderRadius: '24px', // Capsule shape
-            border: '1px solid rgba(255,255,255,0.1)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-            zIndex: 999,
-            backdropFilter: 'blur(10px)',
-            userSelect: 'none', // Prevent text selection
-            WebkitUserSelect: 'none'
-          }}
-        >
-          {/* Drag Handle */}
-          <div
-            style={{
-              width: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'move', // Drag cursor
-              paddingRight: '6px',
-              borderRight: '1px solid rgba(255,255,255,0.1)',
-              marginRight: '2px'
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-              dragOffset.current = {
-                x: e.clientX - toolbarPos.x,
-                y: e.clientY - toolbarPos.y
-              };
-
-              const handleMouseMove = (e: MouseEvent) => {
-                setToolbarPos({
-                  x: Math.max(10, Math.min(window.innerWidth - 210, e.clientX - dragOffset.current.x)),
-                  y: Math.max(10, Math.min(window.innerHeight - 90, e.clientY - dragOffset.current.y))
-                });
-              };
-
-              const handleMouseUp = () => {
-                setIsDragging(false);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-              };
-
-              document.addEventListener('mousemove', handleMouseMove);
-              document.addEventListener('mouseup', handleMouseUp);
-            }}
-          >
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>⋮⋮</span>
-          </div>
-
           <button
-            onClick={() => setShowLeftPanel(!showLeftPanel)}
-            title={showLeftPanel ? 'Hide Data Panel (Left)' : 'Show Data Panel (Left)'}
+            className={`log-toggle-btn ${showRuntimeLog ? 'active' : ''}`}
+            onClick={() => setShowRuntimeLog(!showRuntimeLog)}
             style={{
-              width: '40px',
-              height: '40px',
+              background: showRuntimeLog ? 'rgba(88, 166, 255, 0.2)' : 'transparent',
+              border: '1px solid var(--border-subtle)',
+              color: showRuntimeLog ? '#58a6ff' : 'var(--text-dim)',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              background: showLeftPanel ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.05)',
-              border: showLeftPanel ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.15)',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              fontSize: '20px',
-              transition: 'all 0.2s'
+              gap: '4px'
             }}
           >
-            📊
+            📋 Log
+            <span style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: isConnected ? '#238636' : '#f85149'
+            }} />
           </button>
+        </footer>
 
-          <button
-            onClick={() => setShowCenterPanel(!showCenterPanel)}
-            title={showCenterPanel ? 'Hide Pathway (Center)' : 'Show Pathway (Center)'}
-            style={{
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: showCenterPanel ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.05)',
-              border: showCenterPanel ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.15)',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              fontSize: '20px',
-              transition: 'all 0.2s'
-            }}
-          >
-            🗺️
-          </button>
+        {/* Runtime Log Panel Overlay */}
+        {showRuntimeLog && (
+          <RuntimeLogPanel onClose={() => setShowRuntimeLog(false)} />
+        )}
 
-          <button
-            onClick={() => setShowRightPanel(!showRightPanel)}
-            title={showRightPanel ? 'Hide AI Panel (Right)' : 'Show AI Panel (Right)'}
-            style={{
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: showRightPanel ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.05)',
-              border: showRightPanel ? '1px solid rgba(102, 126, 234, 0.5)' : '1px solid rgba(255,255,255,0.15)',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              fontSize: '20px',
-              transition: 'all 0.2s'
-            }}
-          >
-            🤖
-          </button>
-        </div>
-
-      </main >
-
-      {/* Footer / Logs */}
-      < footer style={{
-        height: '30px',
-        background: 'var(--bg-panel)',
-        borderTop: '1px solid var(--border-subtle)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 12px', fontSize: '11px', color: 'var(--text-dim)',
-        flexShrink: 0
-      }}>
-        <div>BioViz Local v1.0.0 • Workbench Mode</div>
-        <div style={{ display: 'flex', gap: '8px', maxWidth: '500px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          <span style={{ color: 'var(--brand-primary)' }}>Last:</span> {logs.length > 0 ? logs[logs.length - 1] : 'Ready'}
-        </div>
-      </footer >
-
-      {/* v2.0: AI Event Panel for proactive suggestions */}
-      < AIEventPanel
-        sendCommand={sendCommand}
-        isConnected={isConnected}
-        onNavigateToGSEA={() => setRightPanelView('enrichment')}
-        onExportSession={() => activeAnalysis && exportSession(activeAnalysis)}
-        analysisContext={activeAnalysis ? {
-          pathway: activeAnalysis.pathway,
-          volcanoData: activeAnalysis.volcano_data,
-          statistics: activeAnalysis.statistics
-        } : undefined}
-      />
-
-    </div >
+        {/* v2.0: AI Event Panel for proactive suggestions */}
+        <AIEventPanel
+          sendCommand={sendCommand}
+          isConnected={isConnected}
+          onNavigateToGSEA={() => setRightPanelView('enrichment')}
+          onExportSession={() => activeAnalysis && exportSession(activeAnalysis)}
+          analysisContext={activeAnalysis ? {
+            pathway: activeAnalysis.pathway,
+            volcanoData: activeAnalysis.volcano_data,
+            statistics: activeAnalysis.statistics
+          } : undefined}
+        />
+      </div>
+    </div>
   );
 }
 

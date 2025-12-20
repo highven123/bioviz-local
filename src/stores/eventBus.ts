@@ -91,6 +91,9 @@ export const BioVizEvents = {
 
     // Multi-sample
     SAMPLE_GROUP_CHANGED: 'SAMPLE_GROUP_CHANGED',
+
+    // App Log
+    APP_LOG: 'APP_LOG',
 } as const;
 
 export type BioVizEventType = keyof typeof BioVizEvents;

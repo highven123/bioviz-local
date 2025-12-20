@@ -120,6 +120,14 @@ class PathwayAutoLayoutEngine:
             wid = pathway_id
             if '_' in wid: wid = wid.split('_')[0]
             return f"https://www.wikipathways.org/instance/{wid}"
+        elif source in ['go', 'go_bp'] or (pathway_id and pathway_id.startswith('GO:')):
+            # Handle GO:0006915 format
+            go_id = pathway_id
+            if '(' in go_id: # "apoptotic process (GO:0006915)"
+                import re
+                match = re.search(r'GO:(\d+)', go_id)
+                if match: go_id = match.group(0)
+            return f"http://amigo.geneontology.org/amigo/term/{go_id}"
         return None
     
     def _layout_circular(self, genes: List[str]) -> Dict[str, Tuple[float, float]]:
@@ -274,6 +282,7 @@ class PathwayAutoLayoutEngine:
             'width': self.canvas_width,
             'height': self.canvas_height,
             'genes': genes,
+            'source_url': source_url,
             'metadata': {
                 'layout_algorithm': self.layout_algorithm,
                 'auto_generated': True,

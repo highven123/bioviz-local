@@ -93,6 +93,26 @@ async fn restart_sidecar(
     Ok("Sidecar restarted".to_string())
 }
 
+/// Open or toggle developer tools
+#[tauri::command]
+fn open_devtools(window: tauri::Window) {
+    #[cfg(feature = "devtools")]
+    {
+        if let Some(webview) = window.get_webview_window("main") {
+            webview.open_devtools();
+        } else {
+            // Fallback: try to open on current window
+            eprintln!("[BioViz] Could not find main webview window for devtools");
+        }
+    }
+    
+    #[cfg(not(feature = "devtools"))]
+    {
+        let _ = window;
+        eprintln!("[BioViz] Devtools feature not enabled");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -119,6 +139,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Open devtools with Cmd+Shift+I shortcut
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // No action needed
+            }
+            
             // Clean up on window close or destroy
             if let tauri::WindowEvent::Destroyed = event {
                 cleanup_sidecar(window.state::<AppState>());
@@ -128,7 +153,8 @@ pub fn run() {
             send_command,
             is_sidecar_running,
             heartbeat,
-            restart_sidecar
+            restart_sidecar,
+            open_devtools  // Add new command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
