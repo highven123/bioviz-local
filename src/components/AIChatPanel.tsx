@@ -22,7 +22,7 @@ interface AIChatPanelProps {
     };
     chatHistory?: Message[];  // Chat history from parent
     onChatUpdate?: (messages: Message[]) => void;  // Callback to update parent
-    onNavigateToGSEA?: () => void;  // Navigate to GSEA panel
+    workflowPhase?: 'perception' | 'exploration' | 'synthesis';
 }
 
 export const AIChatPanel: React.FC<AIChatPanelProps> = ({
@@ -32,20 +32,18 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     analysisContext,
     chatHistory = [],
     onChatUpdate,
-    onNavigateToGSEA
+    workflowPhase = 'perception'
 }) => {
     const [messages, setMessages] = useState<Message[]>(chatHistory);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const onChatUpdateRef = useRef(onChatUpdate);
-    useEffect(() => {
-        onChatUpdateRef.current = onChatUpdate;
-    }, [onChatUpdate]);
+    const isInternalUpdate = useRef(false);
 
     // Sync with parent chatHistory when it changes (e.g., switching analysis)
     useEffect(() => {
         if (chatHistory && JSON.stringify(chatHistory) !== JSON.stringify(messages)) {
+            isInternalUpdate.current = false;
             setMessages(chatHistory);
         }
     }, [chatHistory]);
@@ -123,13 +121,16 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
 
     // Notify parent when messages change
     useEffect(() => {
-        if (onChatUpdateRef.current && messages.length > 0) {
-            // Only notify if different from chatHistory to prevent loops
-            if (JSON.stringify(messages) !== JSON.stringify(chatHistory)) {
-                onChatUpdateRef.current(messages);
+        if (onChatUpdate && messages.length > 0) {
+            if (isInternalUpdate.current) {
+                // Only notify if different from chatHistory to prevent loops
+                if (JSON.stringify(messages) !== JSON.stringify(chatHistory)) {
+                    onChatUpdate(messages);
+                }
+                isInternalUpdate.current = false;
             }
         }
-    }, [messages, chatHistory]);
+    }, [messages, chatHistory, onChatUpdate]);
 
     // Listen for AI responses from useBioEngine's lastResponse
     useEffect(() => {
@@ -145,7 +146,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             if (lastResponse.cmd === 'CHAT' && (lastResponse.type === 'CHAT' || lastResponse.type === 'EXECUTE')) {
                 console.log('[AIChatPanel] Processing AI response, content:', lastResponse.content?.substring(0, 50));
 
-                updateMessages(prev => {
+                isInternalUpdate.current = true;
+                setMessages(prev => {
                     // Build response content
                     let responseContent = lastResponse.content;
 
@@ -230,7 +232,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             timestamp: Date.now()
         };
 
-        updateMessages(prev => [...prev, userMessage]);
+        isInternalUpdate.current = true;
+        setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
 
@@ -263,6 +266,15 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
     };
 
+
+    const milestoneInfo = {
+        perception: { title: "🎯 Stage 1: Perception", hint: "AI has scanned your data. Review the initial insights." },
+        exploration: { title: "🔍 Stage 2: Exploration", hint: "Deep dive into pathways and evidence. Use tools to investigate." },
+        synthesis: { title: "🤖 Stage 3: Synthesis", hint: "Consolidating all evidence into a consistent mechanism." }
+    };
+
+    const currentMilestone = milestoneInfo[workflowPhase] || milestoneInfo['perception'];
+
     return (
         <div className="ai-chat-panel">
             <div className="chat-header">
@@ -276,42 +288,19 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             </div>
 
             <div className="chat-messages">
+                <div className="milestone-badge">
+                    <span className="milestone-title">{currentMilestone.title}</span>
+                    <span className="milestone-hint">{currentMilestone.hint}</span>
+                </div>
+
                 {messages.length === 0 && (
-                    <div className="welcome-message">
-                        <p>👋 Hi! I'm your BioViz AI assistant.</p>
-                        <p>Try asking me:</p>
-                        <ul>
-                            <li>"Show me the apoptosis pathway"</li>
-                            <li>"List available pathways"</li>
-                            <li>"Explain the PI3K-Akt pathway"</li>
-                        </ul>
+                    <div className="welcome-message" style={{ padding: '20px 16px' }}>
+                        <p style={{ fontSize: '15px', fontWeight: 600 }}>👋 {currentMilestone.title}</p>
+                        <p style={{ fontSize: '13px', opacity: 0.8 }}>Choose a smart skill below to start your discovery.</p>
                     </div>
                 )}
 
-                {/* Analysis Summary Card - show when data is loaded */}
-                {analysisContext?.volcanoData && analysisContext.volcanoData.length > 0 && (
-                    <div className="analysis-summary-card">
-                        <div className="summary-header">
-                            <span className="summary-icon">🧬</span>
-                            <span className="summary-title">Analysis Complete</span>
-                        </div>
-                        <div className="summary-content">
-                            <p>
-                                Found <strong style={{ color: '#ef4444' }}>
-                                    {analysisContext.volcanoData.filter((g: any) => g.status === 'DOWN').length}
-                                </strong> downregulated and <strong style={{ color: '#22c55e' }}>
-                                    {analysisContext.volcanoData.filter((g: any) => g.status === 'UP').length}
-                                </strong> upregulated genes.
-                            </p>
-                            <p className="summary-hint">Would you like to run enrichment analysis?</p>
-                        </div>
-                        {onNavigateToGSEA && (
-                            <button className="gsea-btn" onClick={onNavigateToGSEA}>
-                                🔬 Open GSEA
-                            </button>
-                        )}
-                    </div>
-                )}
+
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`message ${msg.role}`}>
                         <div className="message-avatar">

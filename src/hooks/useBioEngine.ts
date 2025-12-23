@@ -52,7 +52,12 @@ export interface UseBioEngineReturn {
     parseFilterQuery: (naturalLanguageQuery: string, availableFields?: unknown) => Promise<SidecarResponse | void>;
     /** Generate speculative hypotheses (Phase 3) */
     generateHypothesis: (significantGenes: unknown, pathways?: unknown, volcanoData?: unknown) => Promise<SidecarResponse | void>;
+    /** Run Mechanistic Narrative Analysis (Phase 2) */
+    runNarrativeAnalysis: (enrichmentResults?: unknown) => Promise<SidecarResponse | void>;
+    /** Run Single-Cell Contextual Analysis (Phase 3) */
+    runSingleCellAnalysis: (filePath: string, options?: { clusterKey?: string; pathways?: Record<string, string[]> }) => Promise<SidecarResponse | void>;
 }
+
 
 /**
  * Custom hook for communicating with the BioViz Python engine.
@@ -419,6 +424,36 @@ export function useBioEngine(): UseBioEngineReturn {
         return sendCommand('GENERATE_HYPOTHESIS', { significant_genes: significantGenes, pathways, volcano_data: volcanoData }, true);
     }, [sendCommand]);
 
+    /**
+     * Run Mechanistic Narrative Analysis (Phase 2)
+     * Converts enrichment results into a paper-ready narrative report.
+     */
+    const runNarrativeAnalysis = useCallback(async (enrichmentResults?: unknown): Promise<SidecarResponse | void> => {
+        return sendCommand('AGENT_TASK', {
+            intent: 'analyze_narrative',
+            params: { enrichment_results: enrichmentResults }
+        }, true);
+    }, [sendCommand]);
+
+    /**
+     * Run Single-Cell Contextual Analysis (Phase 3)
+     * Computes pathway scores, spatial interactions, and trajectory dynamics.
+     */
+    const runSingleCellAnalysis = useCallback(async (
+        filePath: string,
+        options?: { clusterKey?: string; pathways?: Record<string, string[]> }
+    ): Promise<SidecarResponse | void> => {
+        return sendCommand('AGENT_TASK', {
+            intent: 'sc_contextual',
+            params: {
+                file_path: filePath,
+                cluster_key: options?.clusterKey || 'cell_type',
+                pathways: options?.pathways
+            }
+        }, true);
+    }, [sendCommand]);
+
+
     return {
         isConnected,
         isLoading,
@@ -433,7 +468,10 @@ export function useBioEngine(): UseBioEngineReturn {
         summarizeDifferentialExpression,
         parseFilterQuery,
         generateHypothesis,
+        runNarrativeAnalysis,
+        runSingleCellAnalysis,
     };
+
 }
 
 export default useBioEngine;

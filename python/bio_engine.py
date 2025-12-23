@@ -55,6 +55,29 @@ def setup_logging():
 setup_logging()
 
 
+# ==============================================================================
+# CRITICAL FIX: Runtime Module Path
+# Ensure custom modules (agent_runtime, motia, workflow_registry, narrative)
+# are discoverable by adding the python directory to sys.path
+# ==============================================================================
+# Determine the directory containing this script
+if hasattr(sys, '_MEIPASS'):
+    # Running as PyInstaller bundle - modules should be in the bundle
+    bundle_dir = sys._MEIPASS
+    logging.info(f"Running in PyInstaller bundle: {bundle_dir}")
+    # Add bundle directory to path (should already be there, but ensure it)
+    if bundle_dir not in sys.path:
+        sys.path.insert(0, bundle_dir)
+else:
+    # Running from source - add the python directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    logging.info(f"Running from source: {script_dir}")
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+
+# Log sys.path for debugging
+logging.info(f"Python sys.path: {sys.path[:3]}...")  # Log first 3 entries
+
 # Check if running in packaged app (PyInstaller)
 is_packaged = hasattr(sys, '_MEIPASS')
 

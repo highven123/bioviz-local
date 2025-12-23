@@ -151,22 +151,33 @@ function buildPython() {
         const excludeArgs = exclusions.map(mod => `--exclude-module ${mod}`).join(' ');
 
         // Hidden imports needed for pkg_resources/setuptools vendored packages
+
         const hiddenImports = [
             'setuptools', 'pkg_resources',
             'jaraco.text', 'jaraco.functools', 'jaraco.context',
             'platformdirs', 'tomli', 'email', 'calendar',
-            'secrets', 'gseapy', 'scipy', 'pandas', 'numpy'
+            'secrets', 'gseapy', 'scipy', 'pandas', 'numpy',
+            // BioViz Agent Modules
+            'agent_runtime', 'motia', 'workflow_registry',
+            'narrative.deduplication', 'narrative.literature_rag',
+            // Phase 3: Single-Cell Modules
+            'singlecell', 'singlecell.sc_loader', 'singlecell.pathway_scorer',
+            'singlecell.spatial_lr', 'singlecell.trajectory'
         ];
+
         const hiddenImportArgs = hiddenImports.map(mod => `--hidden-import ${mod}`).join(' ');
 
         console.log(`[build-python] Excluding ${exclusions.length} modules...`);
         console.log(`[build-python] Adding ${hiddenImports.length} hidden imports...`);
+
 
         const pyinstallerCmd = [
             'pyinstaller',
             '--onefile',
             '--clean',
             '--strip',  // Strip debug symbols (Unix only, ignored on Windows)
+            `--paths "${PYTHON_DIR}"`,  // Ensure local modules are found
+            `--additional-hooks-dir "${PYTHON_DIR}"`,  // Use custom hooks
             '--collect-all jaraco.text',
             '--collect-all jaraco.functools',
             '--collect-all jaraco.context',

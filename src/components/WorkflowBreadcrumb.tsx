@@ -7,7 +7,7 @@ interface Props {
     canAccessMapping: boolean;
     canAccessViz: boolean;
     onStepClick: (step: WorkflowStep) => void;
-    variant?: 'horizontal' | 'vertical';
+    variant?: 'horizontal' | 'vertical' | 'hub';
 }
 
 const STEPS: { key: WorkflowStep; label: string; icon: string }[] = [
@@ -64,6 +64,70 @@ export const WorkflowBreadcrumb: React.FC<Props> = ({ currentStep, onStepClick, 
                         </div>
                     );
                 })}
+            </div>
+        );
+    }
+
+    if (variant === 'hub') {
+        return (
+            <div className="operation-hub-bar" style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                padding: '0 16px',
+                height: '40px',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle)',
+                width: '100%',
+                maxWidth: '1200px'
+            }}>
+                {/* Slim Stepper */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {STEPS.map((step, index) => {
+                        const isCurrent = step.key === currentStep;
+                        const isCompleted = index < currentIndex;
+                        const isSelectable = canAccess(step.key);
+
+                        return (
+                            <div
+                                key={step.key}
+                                onClick={() => isSelectable && onStepClick(step.key)}
+                                style={{
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '50%',
+                                    background: isCompleted ? 'var(--color-success)' : (isCurrent ? 'var(--brand-primary)' : 'transparent'),
+                                    border: isCurrent || isCompleted ? 'none' : '1px solid var(--border-subtle)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    color: 'white',
+                                    cursor: isSelectable ? 'pointer' : 'default',
+                                    opacity: isSelectable ? 1 : 0.4,
+                                    transition: 'all 0.2s',
+                                    boxShadow: isCurrent ? '0 0 10px rgba(99, 102, 241, 0.3)' : 'none'
+                                }}
+                                title={step.label}
+                            >
+                                {isCompleted ? '✓' : index + 1}
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div style={{ width: '1px', height: '20px', background: 'var(--border-subtle)' }} />
+
+                {/* Hub Content Placeholder - will be populated by children or props later if needed */}
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '20px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: 'var(--text-dim)' }}>STP:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{STEPS[currentIndex].label}</span>
+                    </div>
+                    {/* The slot for Data Info and Controls will be handled in App.tsx by wrapping this or passing children */}
+                </div>
             </div>
         );
     }

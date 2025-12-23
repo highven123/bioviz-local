@@ -14,11 +14,9 @@ import warnings
 try:
     from scipy.stats import fisher_exact, hypergeom
     SCIPY_AVAILABLE = True
-except ImportError as e:
+except ImportError:
     SCIPY_AVAILABLE = False
-    logging.error(f"scipy import failed: {e}")
-    import sys
-    print(f"[ORA] SCIPY IMPORT FAILED: {e}", file=sys.stderr, flush=True)
+    logging.warning("scipy not installed. ORA will not be available.")
 
 try:
     from statsmodels.stats.multitest import multipletests

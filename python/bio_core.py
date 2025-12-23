@@ -122,6 +122,22 @@ except ImportError as e:
     TEMPLATE_MANAGER = None
     logging.warning(f"[INIT] Template manager not available: {e}")
 
+
+# Import Agent Runtime
+try:
+    import traceback
+    from agent_runtime import agent_runtime
+    AGENT_RUNTIME_AVAILABLE = True
+    logging.info("[INIT] AgentRuntime initialized")
+except ImportError as e:
+    AGENT_RUNTIME_AVAILABLE = False
+    logging.warning(f"[INIT] AgentRuntime not available: {e}")
+    logging.warning(traceback.format_exc())
+except Exception as e:
+    AGENT_RUNTIME_AVAILABLE = False
+    logging.warning(f"[INIT] AgentRuntime failed to load (General Exception): {e}")
+    logging.warning(traceback.format_exc())
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -1668,6 +1684,22 @@ def handle_ai_interpret_studio(payload: Dict[str, Any]):
         send_error(str(e))
 
 
+def handle_agent_task(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle automated agent tasks via Motia workflow engine.
+    Payload: {"intent": "...", "params": {...}}
+    """
+    if not AGENT_RUNTIME_AVAILABLE:
+        return {"status": "error", "message": "Agent Runtime not loaded"}
+    
+    try:
+        logging.info(f"[AGENT] Received task: {payload.get('intent')}")
+        result = agent_runtime.process_intent(payload)
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
+
+
 def process_command(command_obj: Dict[str, Any]) -> None:
     """Route command to appropriate handler."""
     global CURRENT_REQUEST_ID, CURRENT_CMD
@@ -1701,7 +1733,9 @@ def process_command(command_obj: Dict[str, Any]) -> None:
             "PARSE_FILTER": handle_parse_filter,
             "GENERATE_HYPOTHESIS": handle_generate_hypothesis,
             "DISCOVER_PATTERNS": handle_discover_patterns,
+            "DISCOVER_PATTERNS": handle_discover_patterns,
             "DESCRIBE_VISUALIZATION": handle_describe_visualization,
+            "AGENT_TASK": handle_agent_task,
         }
         
         if GSEA_AVAILABLE:
@@ -1748,6 +1782,7 @@ def process_command(command_obj: Dict[str, Any]) -> None:
         
         # V2.0: Add Enrichment Framework v2.0 handlers
         return_handlers["ENRICH_RUN"] = handle_enrich_run
+        return_handlers["ENRICH_FUSION_RUN"] = handle_enrich_fusion_run
         return_handlers["GENE_SET_LIST"] = handle_gene_set_list
         return_handlers["LOAD_CUSTOM_GMT"] = handle_load_custom_gmt
         return_handlers["BATCH_ENRICH_RUN"] = handle_batch_enrich_run
@@ -2208,6 +2243,31 @@ def handle_list_templates(_payload: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================================
 # Enrichment Framework v2.0 Handlers
 # ============================================================================
+
+def handle_enrich_fusion_run(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run multi-source fusion enrichment analysis."""
+    try:
+        from enrichment.fusion import fusion_pipeline
+        method = payload.get('method', 'ORA').upper()
+        genes = payload.get('genes', [])
+        sources = payload.get('sources', ['reactome', 'kegg', 'wikipathways'])
+        species = payload.get('species', 'auto')
+        params = payload.get('parameters', {})
+        
+        if not genes:
+            return {"status": "error", "message": "No input genes provided."}
+            
+        result = fusion_pipeline.run_fusion_analysis(
+            genes=genes,
+            method=method,
+            sources=sources,
+            species=species,
+            parameters=params
+        )
+        return result
+    except Exception as e:
+        logging.error(f"Fusion enrichment failed: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 def handle_enrich_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run enrichment analysis (ORA or GSEA) using new enrichment framework."""

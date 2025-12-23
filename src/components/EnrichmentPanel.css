@@ -225,6 +225,128 @@
     opacity: 1;
 }
 
+/* Main Panel */
+.enrichment-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    background: #0B0E14;
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, sans-serif;
+    height: 100%;
+}
+
+/* Fusion Specific Styles */
+.fusion-row-master {
+    background: rgba(99, 102, 241, 0.05) !important;
+}
+
+.fusion-cluster-icon {
+    font-size: 14px;
+    filter: drop-shadow(0 0 2px var(--brand-primary));
+}
+
+.significant-fdr {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.source-badges {
+    display: flex;
+    gap: 4px;
+}
+
+.source-badge {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+}
+
+.badge-reactome {
+    background: #8b5cf6;
+}
+
+.badge-kegg {
+    background: #f59e0b;
+}
+
+.badge-wikipathways {
+    background: #10b981;
+}
+
+.badge-go_bp {
+    background: #3b82f6;
+}
+
+.fusion-drilldown-row {
+    background: #141820 !important;
+}
+
+.fusion-members-container {
+    padding: 8px 16px 12px 40px;
+    border-left: 2px solid var(--brand-primary);
+}
+
+.fusion-members-label {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.fusion-member-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fusion-member-item:last-child {
+    border-bottom: none;
+}
+
+.source-tag {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.tag-reactome {
+    color: #8b5cf6;
+    border: 1px solid #8b5cf6;
+}
+
+.tag-kegg {
+    color: #f59e0b;
+    border: 1px solid #f59e0b;
+}
+
+.tag-wikipathways {
+    color: #10b981;
+    border: 1px solid #10b981;
+}
+
+.tag-go_bp {
+    color: #3b82f6;
+    border: 1px solid #3b82f6;
+}
+
+.member-stats {
+    color: #64748b;
+    margin-left: auto;
+}
+
 .enrichment-info {
     display: flex;
     flex-direction: column;

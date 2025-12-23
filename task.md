@@ -4,6 +4,12 @@
 The user wants to search for KEGG pathways by name (e.g., "Cell Cycle") directly in the app and download them into the local templates folder, avoiding direct interaction with the KEGG website in a browser.
 
 ## Todo List
+- [x] Phase 7: UI Polishing & Adaptation
+    - [x] Create linear "Science Journey" navigation bar 🗺️
+    - [x] Implement phase-aware `AIChatPanel` UI (Milestones, Skills)
+    - [x] Refactor Agent Hub into unified [CHAT] and [ANALYZER] tabs 🔬
+    - [x] Implement contextual "Instrument Bar" for skills and modules
+    - [x] Remove redudant AI Assistant UI elements
 - [ ] **Design & Planning**
     - [ ] Create implementation plan for backend search and KGML parsing
     - [ ] Define KGML to JSON mapping strategy

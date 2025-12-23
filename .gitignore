@@ -64,3 +64,16 @@ sample_data/report_*
 sample_data/*_stat_*
 sample_data/*.svg
 .env
+
+# Local Python Venv
+python/venv_prod/
+
+# Tauri Sidecar Binaries
+src-tauri/binaries/
+
+# Exclude binaries and builds
+src-tauri/binaries/
+build/
+python/dist/
+python/build/
+

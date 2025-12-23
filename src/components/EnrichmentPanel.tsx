@@ -40,6 +40,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
 
     // Static list - could be dynamic from backend in future
     const availableSources = [
+        { id: 'fusion', name: '✨ BioViz Multi-Source Fusion' },
         { id: 'reactome', name: 'Reactome Pathways' },
         { id: 'wikipathways', name: 'WikiPathways' },
         { id: 'go_bp', name: 'GO Biological Process' },
@@ -99,6 +100,36 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                     message: lastResponse.message || 'Enrichment analysis failed'
                 });
             }
+        } else if (lastResponse.cmd === 'ENRICH_FUSION_RUN') {
+            setIsLoading(false);
+            if (lastResponse.status === 'ok') {
+                // Fusion results are structured as modules
+                const fusionResults = (lastResponse.fusion_results || []) as any[];
+
+                // Map fusion modules to a compatible format for basic ranking but keep full structure
+                setResults(fusionResults.map(m => ({
+                    pathway_name: m.representative_term,
+                    p_value: m.p_value,
+                    fdr: m.fdr,
+                    hit_genes: m.genes,
+                    overlap_ratio: `${m.members?.[0]?.overlap_ratio || 'n/a'} (Fusion)`,
+                    isFused: true,
+                    members: m.members,
+                    source: m.source
+                } as any)));
+
+                setMetadata(lastResponse.metadata || { sources: lastResponse.sources });
+                setFeedback({
+                    type: 'success',
+                    message: `Fusion complete. Consolidated ${lastResponse.total_original_terms} terms into ${lastResponse.total_modules} biological modules.`
+                });
+
+                if (onEnrichmentComplete) {
+                    onEnrichmentComplete(lastResponse);
+                }
+            } else {
+                setFeedback({ type: 'error', message: lastResponse.message || 'Fusion analysis failed' });
+            }
         } else if (lastResponse.cmd === 'SUMMARIZE_ENRICHMENT') {
             setIsSummarizing(false);
             if (lastResponse.status === 'ok') {
@@ -153,14 +184,24 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
         setMetadata(null);
 
         try {
-            await sendCommand('ENRICH_RUN', {
-                method,
-                genes,
-                gene_set_source: geneSetSource,
-                species,
-                custom_gmt_path: geneSetSource === 'custom' ? customGmtPath : undefined,
-                parameters: runParameters
-            });
+            if (geneSetSource === 'fusion') {
+                await sendCommand('ENRICH_FUSION_RUN', {
+                    method,
+                    genes,
+                    sources: ['reactome', 'kegg', 'wikipathways', 'go_bp'],
+                    species,
+                    parameters: runParameters
+                });
+            } else {
+                await sendCommand('ENRICH_RUN', {
+                    method,
+                    genes,
+                    gene_set_source: geneSetSource,
+                    species,
+                    custom_gmt_path: geneSetSource === 'custom' ? customGmtPath : undefined,
+                    parameters: runParameters
+                });
+            }
         } catch (err) {
             setFeedback({
                 type: 'error',
@@ -480,69 +521,92 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                         <table className="results-table">
                             <thead>
                                 <tr>
-                                    <th>Pathway</th>
+                                    <th>Pathway / Module</th>
                                     <th>P-value</th>
                                     <th>FDR</th>
                                     {method === 'ORA' && <th>Odds Ratio</th>}
                                     {method === 'GSEA' && <th>NES</th>}
-                                    <th>Overlap</th>
+                                    <th>{geneSetSource === 'fusion' ? 'Sources' : 'Overlap'}</th>
                                     <th>Genes</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {results.slice(0, 20).map((result, idx) => (
-                                    <tr key={idx}>
-                                        <td className="pathway-name">
-                                            <button
-                                                className="pathway-link"
-                                                onClick={() => {
-                                                    // Extract pathway ID from pathway_name if available
-                                                    // Format examples:
-                                                    // - Reactome: "Apoptotic cleavage of cellular proteins"  
-                                                    // - WikiPathways: "WP4545_Cell Cycle" or just "WP4545"
-                                                    // - GO: "GO:0006915_apoptotic process" or "apoptotic process (GO:0006915)"
-                                                    // - KEGG: "hsa04210:Apoptosis" or just pathway name
+                                {results.slice(0, 30).map((result: any, idx) => (
+                                    <React.Fragment key={idx}>
+                                        <tr className={result.isFused ? 'fusion-row-master' : ''}>
+                                            <td className="pathway-name">
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {result.isFused && <span className="fusion-cluster-icon">💠</span>}
+                                                    <button
+                                                        className="pathway-link"
+                                                        onClick={() => {
+                                                            let pathwayId = result.pathway_id || result.pathway_name;
+                                                            let pathwayName = result.pathway_name;
 
-                                                    let pathwayId = result.pathway_id || result.pathway_name;
-                                                    let pathwayName = result.pathway_name;
+                                                            // ID Extraction logic... (kept same as before)
+                                                            if (pathwayName.includes('(GO:')) {
+                                                                const match = pathwayName.match(/\(GO:(\d+)\)/);
+                                                                if (match) pathwayId = `GO:${match[1]}`;
+                                                            } else if (pathwayName.match(/^GO:\d+/)) {
+                                                                pathwayId = pathwayName.split('_')[0];
+                                                            } else if (pathwayName.match(/^WP\d+/)) {
+                                                                pathwayId = pathwayName.split('_')[0];
+                                                            } else if (pathwayName.match(/^hsa\d+/)) {
+                                                                pathwayId = pathwayName.split(':')[0];
+                                                            }
 
-                                                    // Try to extract IDs from pathway name
-                                                    if (pathwayName.includes('(GO:')) {
-                                                        // "apoptotic process (GO:0006915)" -> "GO:0006915"
-                                                        const match = pathwayName.match(/\(GO:(\d+)\)/);
-                                                        if (match) pathwayId = `GO:${match[1]}`;
-                                                    } else if (pathwayName.match(/^GO:\d+/)) {
-                                                        // "GO:0006915_apoptotic process" -> "GO:0006915"
-                                                        pathwayId = pathwayName.split('_')[0];
-                                                    } else if (pathwayName.match(/^WP\d+/)) {
-                                                        // "WP4545_Cell Cycle" -> "WP4545"
-                                                        pathwayId = pathwayName.split('_')[0];
-                                                    } else if (pathwayName.match(/^hsa\d+/)) {
-                                                        // "hsa04210:Apoptosis" -> "hsa04210"
-                                                        pathwayId = pathwayName.split(':')[0];
-                                                    }
-
-                                                    // Pass pathway info to handler with hit genes
-                                                    onPathwayClick?.(pathwayId, geneSetSource, {
-                                                        pathway_name: pathwayName,
-                                                        hit_genes: result.hit_genes || []
-                                                    });
-                                                }}
-                                                title={`Click to view ${geneSetSource} pathway diagram`}
-                                            >
-                                                {result.pathway_name}
-                                            </button>
-                                        </td>
-                                        <td>{result.p_value.toExponential(2)}</td>
-                                        <td>{result.fdr.toFixed(4)}</td>
-                                        {method === 'ORA' && <td>{result.odds_ratio?.toFixed(2)}</td>}
-                                        {method === 'GSEA' && <td>{result.nes?.toFixed(2)}</td>}
-                                        <td>{result.overlap_ratio}</td>
-                                        <td className="hit-genes">
-                                            {(result.hit_genes || []).slice(0, 5).join(', ')}
-                                            {(result.hit_genes || []).length > 5 && '...'}
-                                        </td>
-                                    </tr>
+                                                            onPathwayClick?.(pathwayId, result.source || geneSetSource, {
+                                                                pathway_name: pathwayName,
+                                                                hit_genes: result.hit_genes || []
+                                                            });
+                                                        }}
+                                                    >
+                                                        {result.pathway_name}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            <td>{result.p_value.toExponential(2)}</td>
+                                            <td className={result.fdr < 0.05 ? 'significant-fdr' : ''}>
+                                                {result.fdr.toFixed(4)}
+                                            </td>
+                                            {method === 'ORA' && <td>{result.odds_ratio?.toFixed(2) || 'n/a'}</td>}
+                                            {method === 'GSEA' && <td>{result.nes?.toFixed(2) || 'n/a'}</td>}
+                                            <td>
+                                                {result.isFused ? (
+                                                    <div className="source-badges">
+                                                        {Array.from(new Set(result.members?.map((m: any) => m.source) || [])).map((s: any) => (
+                                                            <span key={s} className={`source-badge badge-${s}`}>{s[0].toUpperCase()}</span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    result.overlap_ratio
+                                                )}
+                                            </td>
+                                            <td className="hit-genes">
+                                                {(result.hit_genes || []).slice(0, 5).join(', ')}
+                                                {(result.hit_genes || []).length > 5 && '...'}
+                                            </td>
+                                        </tr>
+                                        {/* Drill-down view for Fusion Results */}
+                                        {result.isFused && result.members && result.members.length > 1 && (
+                                            <tr className="fusion-drilldown-row">
+                                                <td colSpan={7}>
+                                                    <div className="fusion-members-container">
+                                                        <div className="fusion-members-label">Consolidated Terms:</div>
+                                                        <div className="fusion-members-list">
+                                                            {result.members.map((m: any, midx: number) => (
+                                                                <div key={midx} className="fusion-member-item">
+                                                                    <span className={`source-tag tag-${m.source}`}>{m.source}</span>
+                                                                    <span className="member-name">{m.pathway_name}</span>
+                                                                    <span className="member-stats">FDR: {m.fdr?.toFixed(4)} | Overlap: {m.overlap_ratio}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>
