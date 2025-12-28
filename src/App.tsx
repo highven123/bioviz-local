@@ -70,6 +70,7 @@ interface AnalysisResult {
   synthesisChatHistory?: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;  // Synthesis phase chat
   // Legacy field for backward compatibility
   chatHistory?: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
+  enrichmentSummary?: string;
   enrichmentResults?: any[];
   gseaResults?: { up: any[], down: any[] };
   enrichmentMetadata?: any;
@@ -102,85 +103,25 @@ function getBaseName(filePath: string | undefined | null): string {
 }
 function App() {
   const { t, lang, setLang } = useI18n();
-  // --- Commercial Licensing ---
+  const { isConnected, isLoading: engineLoading, sendCommand, activeProposal, resolveProposal, lastResponse } = useBioEngine();
+
+  // --- 1. Core State Consolidation ---
+  // (Moved to top level of App to avoid TDZ ReferenceErrors)
+
+  // Licensing & UX
   const [isPro, setIsPro] = useState(false);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
-
-  useEffect(() => {
-    const checkLicense = async () => {
-      const savedKey = LicenseManager.loadLicense();
-      if (savedKey) {
-        const result = await LicenseManager.validateLicense(savedKey);
-        setIsPro(result.valid);
-        if (!result.valid) {
-          console.warn("Invalid/Expired License:", result.error);
-        }
-      } else {
-        setIsPro(false);
-      }
-    };
-    checkLicense();
-  }, []);
-
-  // --- State ---
-  const [showSplash, setShowSplash] = useState(true); // Splash State
+  const [showSplash, setShowSplash] = useState(true);
   const [showHealthCheck, setShowHealthCheck] = useState(false);
   const [healthReport, setHealthReport] = useState<any>(null);
 
-  const { isConnected, isLoading: engineLoading, sendCommand, activeProposal, resolveProposal, lastResponse } = useBioEngine();
-
-  // Run System Check when Splash finishes
-  useEffect(() => {
-    if (!showSplash && isConnected) {
-      const runCheck = async () => {
-        try {
-          console.log('[App] Running Startup System Check...');
-          const report = await sendCommand('SYS_CHECK', {}, true) as any;
-          if (report && (report.status === 'ok' || report.ram)) { // Handle direct report or wrapper
-            const data = report.report || report; // wrapper vs direct
-            setHealthReport(data);
-            // Show modal only if there are warnings or criticals, OR just show it once for "Pro" feeling?
-            // Roadmap says "Startup Self-Check", implying visibility.
-            // Let's show it always for now, or just if issues?
-            // "Auto-fix or clearly guide errors" -> Implies showing it.
-            setShowHealthCheck(true);
-          }
-        } catch (e) {
-          console.error('System Check failed:', e);
-        }
-      };
-      runCheck();
-
-      // Sync License to Backend
-      const syncLicense = async () => {
-        const savedKey = LicenseManager.loadLicense();
-        if (savedKey) {
-          // We trust frontend validness for UI state, but backend re-validates for security
-          console.log('[App] Syncing license to backend...');
-          try {
-            const res = await sendCommand('VALIDATE_LICENSE', { key: savedKey }, true) as any;
-            if (res?.status === 'ok') {
-              console.log('[App] Backend license validation successful.');
-            } else {
-              console.warn('[App] Backend rejected license:', res?.message);
-            }
-          } catch (e) {
-            console.error('[App] Failed to sync license:', e);
-          }
-        }
-      };
-      syncLicense();
-    }
-  }, [showSplash, isConnected, sendCommand]);
-
-
-  // --- State ---
+  // Wizard & Workflow
   const [draftConfig, setDraftConfig] = useState<AnalysisConfig | null>(null);
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [maxWizardStep, setMaxWizardStep] = useState<1 | 2>(1);
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('upload');
 
-  // Restore analysisResults from localStorage on mount
+  // Analysis results (initialized from localStorage)
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>(() => {
     try {
       const saved = localStorage.getItem('bioviz_sessions');
@@ -191,14 +132,6 @@ function App() {
             ? { ...entry, enrichmentResults: entry.enrichrResults }
             : entry;
           const legacyHistory = Array.isArray(baseEntry?.chatHistory) ? baseEntry.chatHistory : [];
-          if (entry && entry.enrichrResults && !entry.enrichmentResults) {
-            return {
-              ...baseEntry,
-              perceptionChatHistory: Array.isArray(baseEntry?.perceptionChatHistory) ? baseEntry.perceptionChatHistory : [],
-              explorationChatHistory: Array.isArray(baseEntry?.explorationChatHistory) ? baseEntry.explorationChatHistory : legacyHistory,
-              synthesisChatHistory: Array.isArray(baseEntry?.synthesisChatHistory) ? baseEntry.synthesisChatHistory : [],
-            };
-          }
           return {
             ...baseEntry,
             perceptionChatHistory: Array.isArray(baseEntry?.perceptionChatHistory) ? baseEntry.perceptionChatHistory : [],
@@ -215,19 +148,18 @@ function App() {
     return [];
   });
 
+  // Selection & UI Focus
   const [activeResultIndex, setActiveResultIndex] = useState<number>(0);
   const [filteredGenes, setFilteredGenes] = useState<string[]>([]);
   const [activeGene, setActiveGene] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [showFileManager, setShowFileManager] = useState(false);
-  const filehubMenuRef = useRef<HTMLDivElement>(null);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const [isProjectMenuLoading, setIsProjectMenuLoading] = useState(false);
   const [projectHistory, setProjectHistory] = useState<ProjectEntry[]>([]);
   const [pathwayFrequency, setPathwayFrequency] = useState<PathwayFrequency[]>([]);
-  const [isProjectMenuLoading, setIsProjectMenuLoading] = useState(false);
 
-  // Separate independent states for left and right panels
+  // Navigation & Tool Views
   const [leftView, setLeftView] = useState<'chart' | 'table'>('chart');
   const [rightPanelView, setRightPanelView] = useState<'ai-chat' | 'images' | 'multi-sample' | 'de-analysis' | 'enrichment' | 'narrative' | 'singlecell' | 'data-explorer'>('ai-chat');
   const [mainView, setMainView] = useState<'pathway' | 'intelligence' | 'ai-insights'>('ai-insights');
@@ -236,6 +168,107 @@ function App() {
   const [explorationTool, setExplorationTool] = useState<'de-analysis' | 'enrichment' | 'multi-sample' | 'singlecell' | 'images'>('de-analysis');
   const [studioIntelligence, setStudioIntelligence] = useState<any>(null);
 
+  // Popups & Contextual Data
+  const [showEvidencePopup, setShowEvidencePopup] = useState(false);
+  const [evidenceEntity, setEvidenceEntity] = useState<{ type: string; id: string } | null>(null);
+  const [evidenceAudit, setEvidenceAudit] = useState<any | null>(null);
+  const [evidenceDistribution, setEvidenceDistribution] = useState<any | null>(null);
+  const [multiSampleData, setMultiSampleData] = useState<any | null>(null);
+  const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
+
+  // Background Processes
+  const [showRuntimeLog, setShowRuntimeLog] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [isGeneratingStudioReport, setIsGeneratingStudioReport] = useState(false);
+
+  // Refs
+  const filehubMenuRef = useRef<HTMLDivElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const vizRef = useRef<PathwayVisualizerRef>(null);
+
+  // --- 2. Hooks & Effects ---
+
+  // Commercial Licensing Validation
+  useEffect(() => {
+    const checkLicense = async () => {
+      const savedKey = LicenseManager.loadLicense();
+      if (savedKey) {
+        const result = await LicenseManager.validateLicense(savedKey);
+        setIsPro(result.valid);
+        if (!result.valid) {
+          console.warn("Invalid/Expired License:", result.error);
+        }
+      } else {
+        setIsPro(false);
+      }
+    };
+    checkLicense();
+  }, []);
+
+  // Enrichment Summary Sync
+  useEffect(() => {
+    if (lastResponse?.cmd !== 'SUMMARIZE_ENRICHMENT') return;
+    if (lastResponse?.status !== 'ok') return;
+    const summary = (lastResponse as any)?.summary || (lastResponse as any)?.content || (lastResponse as any)?.message;
+    if (!summary) return;
+    setAnalysisResults(prev => {
+      const updated = [...prev];
+      if (updated[activeResultIndex]) {
+        updated[activeResultIndex] = {
+          ...updated[activeResultIndex],
+          enrichmentSummary: summary
+        };
+      }
+      return updated;
+    });
+  }, [lastResponse, activeResultIndex]);
+
+  // System Check on Startup
+  useEffect(() => {
+    if (!showSplash && isConnected) {
+      const runCheck = async () => {
+        try {
+          console.log('[App] Running Startup System Check...');
+          const report = await sendCommand('SYS_CHECK', {}, true) as any;
+          if (report && (report.status === 'ok' || report.ram)) {
+            const data = report.report || report;
+            setHealthReport(data);
+            setShowHealthCheck(true);
+          }
+        } catch (e) {
+          console.error('System Check failed:', e);
+        }
+      };
+      runCheck();
+
+      // Sync License to Backend
+      const syncLicense = async () => {
+        const savedKey = LicenseManager.loadLicense();
+        if (savedKey) {
+          try {
+            await sendCommand('VALIDATE_LICENSE', { key: savedKey }, true);
+          } catch (e) {
+            console.error('[App] Failed to sync license:', e);
+          }
+        }
+      };
+      syncLicense();
+    }
+  }, [showSplash, isConnected, sendCommand]);
+
+  // Sync right panel view when workflow phase changes
+  useEffect(() => {
+    if (workflowPhase === 'perception') {
+      setRightPanelView('ai-chat');
+    } else if (workflowPhase === 'synthesis') {
+      setRightPanelView('narrative');
+    } else if (workflowPhase === 'exploration' && (rightPanelView === 'narrative' || rightPanelView === 'data-explorer')) {
+      setRightPanelView('ai-chat');
+    }
+  }, [workflowPhase, setRightPanelView]);
+
+  // Phase Transition Management
   useEffect(() => {
     if (mainView === 'ai-insights' && workflowPhase !== 'perception') {
       setWorkflowPhase('perception');
@@ -250,113 +283,59 @@ function App() {
     }
   }, [mainView, workflowPhase]);
 
-  // Helper to execute AI skills and update chat history
-  const executeAISkill = async (prompt: string, skillId?: string) => {
-    if (!activeAnalysis) return;
-
-    // Add user message to local history immediately for responsiveness
-    const userMsg: any = { role: 'user', content: prompt, timestamp: Date.now() };
-    const updatedHistory = [...(activeAnalysis.explorationChatHistory || activeAnalysis.chatHistory || []), userMsg];
-
-    setAnalysisResults(prev => {
-      const updated = [...prev];
-      if (updated[activeResultIndex]) {
-        updated[activeResultIndex] = {
-          ...updated[activeResultIndex],
-          explorationChatHistory: updatedHistory,
-          chatHistory: updatedHistory
-        };
-      }
-      return updated;
-    });
-
-    const volcanoData = (activeAnalysis.volcano_data || activeAnalysis.volcanoData || []) as any[];
-    const enrichmentResults =
-      activeAnalysis.enrichmentResults
-      || (activeAnalysis as any)?.pathway?.enriched_terms
-      || (activeAnalysis as any)?.statistics?.enriched_terms;
-    const significantGenes = volcanoData
-      .filter((g: any) => g?.status === 'UP' || g?.status === 'DOWN')
-      .map((g: any) => g?.gene)
-      .filter(Boolean);
-
-    if (skillId) {
-      if (skillId === 'sum') {
-        await sendCommand(enrichmentResults ? 'SUMMARIZE_ENRICHMENT' : 'SUMMARIZE_DE', {
-          ...(enrichmentResults ? { enrichment_data: enrichmentResults } : {}),
-          ...(volcanoData.length ? { volcano_data: volcanoData } : {}),
-          ...(activeAnalysis.statistics ? { statistics: activeAnalysis.statistics } : {})
-        }, false);
-        return;
-      }
-      if (skillId === 'exp') {
-        await sendCommand('SUMMARIZE_ENRICHMENT', {
-          enrichment_data: enrichmentResults,
-          volcano_data: volcanoData,
-          statistics: activeAnalysis.statistics
-        }, false);
-        return;
-      }
-      if (skillId === 'hyp') {
-        await sendCommand('GENERATE_HYPOTHESIS', {
-          significant_genes: significantGenes,
-          pathways: enrichmentResults,
-          volcano_data: volcanoData
-        }, false);
-        return;
-      }
-      if (skillId === 'ref') {
-        await sendCommand('CHAT', { query: prompt, context: activeAnalysis }, false);
-        return;
-      }
-      if (skillId === 'cmp') {
-        await sendCommand('DISCOVER_PATTERNS', { expression_matrix: volcanoData }, false);
-        return;
-      }
-    }
-
-    // Fallback: Send command to AI sidecar with context so it uses current data, not fallback
-    await sendCommand('AGENT_TASK', {
-      intent: prompt,
-      prompt,
-      params: {
-        enrichment_results: activeAnalysis.enrichmentResults,
-        volcano_data: activeAnalysis.volcano_data,
-        file_path: activeAnalysis.sourceFilePath,
-        mapping: activeAnalysis.config?.mapping,
-        data_type: activeAnalysis.config?.dataType,
-        filters: activeAnalysis.config?.analysisMethods?.length
-          ? { methods: activeAnalysis.config?.analysisMethods }
-          : undefined
-      }
-    }, false);
-  };
-
-  // Sync right panel view when workflow phase changes
-  useEffect(() => {
-    console.log('[useEffect] workflowPhase changed to:', workflowPhase, 'Current rightPanelView:', rightPanelView);
-    if (workflowPhase === 'perception') {
-      setRightPanelView('ai-chat');
-    } else if (workflowPhase === 'synthesis') {
-      setRightPanelView('narrative');
-    } else if (workflowPhase === 'exploration' && (rightPanelView === 'narrative' || rightPanelView === 'data-explorer')) {
-      // Transition from Perception/Synthesis views back to Chat or Scientific modules
-      setRightPanelView('ai-chat');
-    }
-  }, [workflowPhase, setRightPanelView]);
-
+  // Click Outside Handlers for Menus
   useEffect(() => {
     if (!showFileManager) return;
     const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!filehubMenuRef.current || !target) return;
-      if (!filehubMenuRef.current.contains(target)) {
+      if (!filehubMenuRef.current || !event.target) return;
+      if (!filehubMenuRef.current.contains(event.target as Node)) {
         setShowFileManager(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFileManager]);
+
+  useEffect(() => {
+    if (!showProjectMenu) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!projectMenuRef.current || !event.target) return;
+      if (!projectMenuRef.current.contains(event.target as Node)) {
+        setShowProjectMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showProjectMenu]);
+
+  // Project History Persistence
+  useEffect(() => {
+    try {
+      localStorage.setItem('bioviz_sessions', JSON.stringify(analysisResults));
+      console.log('[App] Saved', analysisResults.length, 'sessions to localStorage');
+    } catch (e) {
+      console.error('[App] Failed to save sessions:', e);
+    }
+  }, [analysisResults]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyPress = async (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.metaKey || e.ctrlKey) && e.key === 'I') {
+        e.preventDefault();
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('open_devtools');
+        } catch (err) {
+          console.error('[App] Failed to open devtools:', err);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+
+  // --- 3. Callbacks & Derived Data ---
 
   const refreshProjectMeta = useCallback(async () => {
     setIsProjectMenuLoading(true);
@@ -379,55 +358,44 @@ function App() {
   }, [sendCommand]);
 
   useEffect(() => {
-    if (!showProjectMenu) return;
-    void refreshProjectMeta();
+    if (showProjectMenu) refreshProjectMeta();
   }, [showProjectMenu, refreshProjectMeta]);
 
   useEffect(() => {
-    if (analysisResults.length === 0) return;
-    void refreshProjectMeta();
+    if (analysisResults.length > 0) refreshProjectMeta();
   }, [analysisResults.length, refreshProjectMeta]);
-
-  useEffect(() => {
-    if (!showProjectMenu) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!projectMenuRef.current || !target) return;
-      if (!projectMenuRef.current.contains(target)) {
-        setShowProjectMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showProjectMenu]);
-
-  const [showEvidencePopup, setShowEvidencePopup] = useState(false);
-  const [evidenceEntity, setEvidenceEntity] = useState<{ type: string; id: string } | null>(null);
-  const [evidenceAudit, setEvidenceAudit] = useState<any | null>(null);
-  const [evidenceDistribution, setEvidenceDistribution] = useState<any | null>(null);
-  const [multiSampleData, setMultiSampleData] = useState<any | null>(null);
-  const [chartViewMode, setChartViewMode] = useState<VolcanoViewMode>('volcano');
 
   const activeAnalysis = analysisResults[activeResultIndex] || null;
   const uploadedFileBase = getBaseName(activeAnalysis?.sourceFilePath);
 
-  const defaultCommonPathways: PathwayFrequency[] = [
-    { pathway_id: 'hsa04115', pathway_name: 'p53 signaling pathway', count: 0 },
-    { pathway_id: 'hsa04010', pathway_name: 'MAPK signaling pathway', count: 0 },
-    { pathway_id: 'hsa04151', pathway_name: 'PI3K-Akt signaling', count: 0 },
-  ];
+  // --- Derived State & Memorization ---
+  const entityKind: EntityKind = activeAnalysis?.entityKind || 'gene';
+  const entityLabels = ENTITY_META[entityKind];
+
+  const hasMAData = !!activeAnalysis?.volcano_data?.some(
+    (p) => typeof p.mean === 'number' && !Number.isNaN(p.mean)
+  );
+
+  const canAccessMapping = maxWizardStep >= 2;
+  const canAccessViz = analysisResults.length > 0;
+
+  const activeGeneDetail = useMemo((): GeneDetail | null => {
+    if (!activeAnalysis || !activeGene) return null;
+    const point = activeAnalysis.gene_map[activeGene];
+    if (!point) return null;
+    return { name: point.gene, logFC: point.x, pvalue: point.pvalue };
+  }, [activeAnalysis, activeGene]);
 
   const commonPathways = useMemo(() => {
     const map = new Map<string, PathwayFrequency>();
     pathwayFrequency.forEach((p) => {
-      if (!p.pathway_id) return;
-      map.set(p.pathway_id, p);
+      if (p.pathway_id) map.set(p.pathway_id, p);
     });
-    defaultCommonPathways.forEach((p) => {
-      if (!map.has(p.pathway_id)) {
-        map.set(p.pathway_id, p);
-      }
-    });
+    [
+      { pathway_id: 'hsa04115', pathway_name: 'p53 signaling pathway', count: 0 },
+      { pathway_id: 'hsa04010', pathway_name: 'MAPK signaling pathway', count: 0 },
+      { pathway_id: 'hsa04151', pathway_name: 'PI3K-Akt signaling', count: 0 },
+    ].forEach((p) => { if (!map.has(p.pathway_id)) map.set(p.pathway_id, p); });
     return Array.from(map.values()).sort((a, b) => (b.count || 0) - (a.count || 0));
   }, [pathwayFrequency]);
 
@@ -443,106 +411,39 @@ function App() {
     });
   }, [multiSampleData]);
 
-  const [showRuntimeLog, setShowRuntimeLog] = useState(false);
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [isGeneratingStudioReport, setIsGeneratingStudioReport] = useState(false);
-
-
-
-  // One-time migration: Fix old configs with empty pathwayId (v1.2.1)
+  // Migration logic
   useEffect(() => {
     const STORAGE_KEY = 'bioviz_last_config';
     const VERSION_KEY = 'bioviz_config_version';
     const CURRENT_VERSION = '1.2.1';
-
     try {
       const lastVersion = localStorage.getItem(VERSION_KEY);
-
       if (lastVersion !== CURRENT_VERSION) {
-        console.log(`[App] Migrating from version ${lastVersion || 'unknown'} to ${CURRENT_VERSION}`);
-
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const config = JSON.parse(saved);
-
-          // Fix empty pathwayId
           if (config.pathwayId === '') {
-            console.warn('[App] Found old config with empty pathwayId, clearing it');
             config.pathwayId = undefined;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({
-              ...config,
-              timestamp: Date.now()
-            }));
-            console.log('[App] Config fixed and saved');
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...config, timestamp: Date.now() }));
           }
         }
-
-        // Mark migration complete
         localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
-        console.log(`[App] Migration to v${CURRENT_VERSION} complete`);
       }
     } catch (e) {
       console.error('[App] Migration failed:', e);
     }
-  }, []); // Run once on mount
-
-
-  // Auto-save analysisResults to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('bioviz_sessions', JSON.stringify(analysisResults));
-      console.log('[App] Saved', analysisResults.length, 'sessions to localStorage');
-    } catch (e) {
-      console.error('[App] Failed to save sessions:', e);
-    }
-  }, [analysisResults]);
-
-  // Add keyboard shortcut to open devtools (Cmd+Shift+I or Ctrl+Shift+I)
-  useEffect(() => {
-    const handleKeyPress = async (e: KeyboardEvent) => {
-      if (e.shiftKey && (e.metaKey || e.ctrlKey) && e.key === 'I') {
-        e.preventDefault();
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('open_devtools');
-          console.log('[App] Developer tools toggled');
-        } catch (err) {
-          console.error('[App] Failed to open devtools:', err);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
-
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const vizRef = useRef<PathwayVisualizerRef>(null);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     const line = `[${timestamp}] ${message}`;
     setLogs(prev => [...prev.slice(-20), line]);
-
-    // Emit to EventBus so RuntimeLogPanel can catch it
     eventBus.emit(BioVizEvents.APP_LOG, { message });
-
-    // Persist a lightweight run log for debugging (user home dir)
     const persistLog = async () => {
       try {
-        // Ensure directory exists
         await mkdir('', { baseDir: BaseDirectory.AppData, recursive: true });
-
-        await writeTextFile(
-          'bioviz_run.log',
-          line + '\n',
-          {
-            baseDir: BaseDirectory.AppData,
-            append: true,
-          }
-        );
+        await writeTextFile('bioviz_run.log', line + '\n', { baseDir: BaseDirectory.AppData, append: true });
       } catch (e) {
-        // Ignore logging failures to avoid disrupting UX
         console.warn('Run log write failed:', e);
       }
     };
@@ -550,10 +451,74 @@ function App() {
   };
 
 
+  // --- 4. Business Logic ---
+
+  const executeAISkill = async (prompt: string, skillId?: string) => {
+    if (!activeAnalysis) return;
+    const userMsg: any = { role: 'user', content: prompt, timestamp: Date.now() };
+    const updatedHistory = [...(activeAnalysis.explorationChatHistory || activeAnalysis.chatHistory || []), userMsg];
+
+    setAnalysisResults(prev => {
+      const updated = [...prev];
+      if (updated[activeResultIndex]) {
+        updated[activeResultIndex] = { ...updated[activeResultIndex], explorationChatHistory: updatedHistory, chatHistory: updatedHistory };
+      }
+      return updated;
+    });
+
+    const volcanoData = (activeAnalysis.volcano_data || []) as any[];
+    const enrichmentResults = activeAnalysis.enrichmentResults || (activeAnalysis as any)?.pathway?.enriched_terms || (activeAnalysis as any)?.statistics?.enriched_terms;
+    const significantGenes = volcanoData.filter((g: any) => g?.status === 'UP' || g?.status === 'DOWN').map((g: any) => g?.gene).filter(Boolean);
+
+    if (skillId) {
+      if (skillId === 'sum') {
+        await sendCommand(enrichmentResults ? 'SUMMARIZE_ENRICHMENT' : 'SUMMARIZE_DE', { ...(enrichmentResults ? { enrichment_data: enrichmentResults } : {}), ...(volcanoData.length ? { volcano_data: volcanoData } : {}), ...(activeAnalysis.statistics ? { statistics: activeAnalysis.statistics } : {}) }, false);
+        return;
+      }
+      if (skillId === 'exp') {
+        await sendCommand('SUMMARIZE_ENRICHMENT', { enrichment_data: enrichmentResults, volcano_data: volcanoData, statistics: activeAnalysis.statistics }, false);
+        return;
+      }
+      if (skillId === 'hyp') {
+        await sendCommand('GENERATE_HYPOTHESIS', { significant_genes: significantGenes, pathways: enrichmentResults, volcano_data: volcanoData }, false);
+        return;
+      }
+      if (skillId === 'ref') {
+        await sendCommand('CHAT', { query: prompt, context: activeAnalysis }, false);
+        return;
+      }
+      if (skillId === 'cmp') {
+        await sendCommand('DISCOVER_PATTERNS', { expression_matrix: volcanoData }, false);
+        return;
+      }
+    }
+
+    await sendCommand('AGENT_TASK', {
+      intent: prompt,
+      prompt,
+      params: {
+        enrichment_results: activeAnalysis.enrichmentResults,
+        volcano_data: activeAnalysis.volcano_data,
+        file_path: activeAnalysis.sourceFilePath,
+        mapping: activeAnalysis.config?.mapping,
+        data_type: activeAnalysis.config?.dataType,
+        filters: activeAnalysis.config?.analysisMethods?.length ? { methods: activeAnalysis.config?.analysisMethods } : undefined
+      }
+    }, false);
+  };
+
+
+
+
+
+
+
+
+
 
   // --- Actions ---
   const handleAnalysisStart = async (config: AnalysisConfig) => {
-    addLog(t('Running analysis for pathway: {pathway}...', { pathway: config.pathwayId }));
+    addLog(t('Running analysis for pathway: {pathway}...', { pathway: config.pathwayId || 'auto' }));
     setBatchRunning(true);
 
     // Prepare UI for new analysis
@@ -649,26 +614,6 @@ function App() {
 
 
 
-  const activeGeneDetail = useMemo((): GeneDetail | null => {
-    if (!activeAnalysis || !activeGene) return null;
-    const point = activeAnalysis.gene_map[activeGene];
-    if (!point) return null;
-    return {
-      name: point.gene,
-      logFC: point.x,
-      pvalue: point.pvalue
-    };
-  }, [activeAnalysis, activeGene]);
-
-  // --- Entity labels derived from analysis data (fallback: gene) ---
-  const entityKind: EntityKind = activeAnalysis?.entityKind || 'gene';
-  const entityLabels = ENTITY_META[entityKind];
-
-  // --- Check if data has mean values for MA plot ---
-  const hasMAData = !!activeAnalysis?.volcano_data?.some(
-    (p) => typeof p.mean === 'number' && !Number.isNaN(p.mean)
-  );
-
   // If current result doesn't support MA but view is set to MA, auto-switch to Volcano
   useEffect(() => {
     if (activeAnalysis && !hasMAData && chartViewMode === 'ma') {
@@ -676,9 +621,6 @@ function App() {
     }
   }, [activeAnalysis, hasMAData, chartViewMode]);
 
-  // --- Workflow navigation ---
-  const canAccessMapping = maxWizardStep >= 2;
-  const canAccessViz = analysisResults.length > 0;
 
   const handleWorkflowStepClick = (step: WorkflowStep) => {
     if (step === 'upload') {
@@ -744,8 +686,8 @@ function App() {
       const mid = Math.floor(sorted.length / 2);
       return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
     };
-    const up = volcanoData.filter(p => p.status === 'UP' || p.status === 'up').length;
-    const down = volcanoData.filter(p => p.status === 'DOWN' || p.status === 'down').length;
+    const up = volcanoData.filter(p => (p.status as string) === 'UP' || (p.status as string) === 'up').length;
+    const down = volcanoData.filter(p => (p.status as string) === 'DOWN' || (p.status as string) === 'down').length;
 
     return {
       total: volcanoData.length,
@@ -878,7 +820,7 @@ function App() {
       }
     } catch (err) {
       console.error('Failed to generate studio report:', err);
-      addLog(t('Failed to generate AI Super Narrative: {error}', { error: err }));
+      addLog(t('Failed to generate AI Super Narrative: {error}', { error: String(err) }));
     } finally {
       setIsGeneratingStudioReport(false);
     }
@@ -886,6 +828,22 @@ function App() {
 
   const handleEnrichmentComplete = React.useCallback((res: any) => {
     console.log('[App] Enrichment results arrived:', res.cmd);
+
+    if (res?.cmd === 'SUMMARIZE_ENRICHMENT') {
+      const summary = res?.summary || res?.content || res?.message || '';
+      if (!summary || !activeAnalysis) return;
+      setAnalysisResults(prev => {
+        const updated = [...prev];
+        if (updated[activeResultIndex]) {
+          updated[activeResultIndex] = {
+            ...updated[activeResultIndex],
+            enrichmentSummary: summary
+          };
+        }
+        return updated;
+      });
+      return;
+    }
 
     // Handle custom Studio Toggle action from AI Deep Insight
     if (res?.type === 'TOGGLE_STUDIO_VIEW') {
@@ -992,7 +950,7 @@ function App() {
         }
       } catch (e) {
         console.error('Failed to color pathway with DE results:', e);
-        addLog(t('❌ Failed to update visualization: {error}', { error: e }));
+        addLog(t('❌ Failed to update visualization: {error}', { error: String(e) }));
       }
     } else {
       // No pathway selected, just update the volcano/stats data
@@ -1066,7 +1024,7 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to reset DE visualization:', e);
-      addLog(t('❌ Reset error: {error}', { error: e }));
+      addLog(t('❌ Reset error: {error}', { error: String(e) }));
     }
   };
 
@@ -1888,6 +1846,7 @@ function App() {
                           volcanoData={activeAnalysis?.volcano_data}
                           filePath={activeAnalysis?.sourceFilePath}
                           multiSampleSets={multiSampleSets}
+                          summary={activeAnalysis?.enrichmentSummary}
                           onEnrichmentComplete={handleEnrichmentComplete}
                           onPathwayClick={async (pathwayNameOrId, source, metadata) => {
                             console.log(`Pathway clicked: ${pathwayNameOrId} (${source})`, metadata);
@@ -1906,7 +1865,7 @@ function App() {
                                 );
 
                                 if (response?.status === 'ok' && response.pathway) {
-                                  addLog(t('✓ Found: {pathway} ({count} genes)', { pathway: response.pathway_name, count: response.gene_count }));
+                                  addLog(t('✓ Found: {pathway} ({count} genes)', { pathway: String(response.pathway_name || ''), count: Number(response.gene_count || 0) }));
                                   setAnalysisResults(prev => prev.map((item, idx) =>
                                     idx === activeResultIndex
                                       ? { ...item, pathway: response.pathway as any }
@@ -1946,7 +1905,7 @@ function App() {
                                   );
 
                                   if (response?.status === 'ok' && response.pathway) {
-                                    addLog(t('✓ Pathway diagram generated ({count} genes)', { count: response.gene_count }));
+                                    addLog(t('✓ Pathway diagram generated ({count} genes)', { count: Number(response.gene_count || 0) }));
 
                                     setAnalysisResults(prev => prev.map((item, idx) =>
                                       idx === activeResultIndex
@@ -1968,7 +1927,7 @@ function App() {
                               }
                             } catch (err) {
                               console.error('Failed to load pathway:', err);
-                              addLog(t('❌ Error: {error}', { error: err }));
+                              addLog(t('❌ Error: {error}', { error: String(err) }));
                             }
                           }}
                         />

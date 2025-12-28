@@ -213,6 +213,77 @@
     gap: 6px;
 }
 
+/* Live Activity */
+.live-activity {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 10px 12px;
+}
+
+.live-activity-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.live-activity-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.live-activity-status {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    background: rgba(148, 163, 184, 0.2);
+    color: #cbd5f5;
+}
+
+.live-activity-status.done {
+    background: rgba(16, 185, 129, 0.15);
+    color: #6ee7b7;
+}
+
+.live-activity-status.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+}
+
+.live-activity-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.live-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #cbd5e1;
+}
+
+.live-step-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.live-step.active .live-step-label {
+    color: #e9d5ff;
+}
+
+.live-step.done .live-step-label {
+    color: #a7f3d0;
+}
+
 .skill-card {
     display: flex;
     flex-direction: column;

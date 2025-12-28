@@ -17,6 +17,13 @@ interface AISuggestion {
     dismissed?: boolean;
 }
 
+interface LiveActivityState {
+    taskId: string;
+    taskName: string;
+    steps: Array<{ label: string; status: 'pending' | 'active' | 'done' }>;
+    status: 'running' | 'done' | 'error';
+}
+
 interface AIEventPanelProps {
     sendCommand: (cmd: string, data?: Record<string, unknown>, waitForResponse?: boolean) => Promise<SidecarResponse | void>;
     isConnected: boolean;
@@ -38,6 +45,7 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
     const { t } = useI18n();
     const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
     const [isMinimized, setIsMinimized] = useState(true); // Start collapsed
+    const [liveActivity, setLiveActivity] = useState<LiveActivityState | null>(null);
 
     // Draggable state
     const [position, setPosition] = useState({ x: window.innerWidth - 80, y: window.innerHeight / 2 });
@@ -297,6 +305,52 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
         };
     }, [sendCommand]);
 
+    useEffect(() => {
+        const subStart = eventBus.subscribe(BioVizEvents.AI_PROCESS_START, (payload) => {
+            const steps = Array.isArray(payload?.steps) ? payload.steps : [];
+            setLiveActivity({
+                taskId: payload?.taskId || `task_${Date.now()}`,
+                taskName: payload?.taskName || t('Processing task'),
+                steps: steps.map((label: string, idx: number) => ({
+                    label,
+                    status: idx === 0 ? 'active' : 'pending'
+                })),
+                status: 'running'
+            });
+        });
+        const subUpdate = eventBus.subscribe(BioVizEvents.AI_PROCESS_UPDATE, (payload) => {
+            setLiveActivity((prev) => {
+                if (!prev) return prev;
+                if (payload?.taskId && payload.taskId !== prev.taskId) return prev;
+                const stepIndex = typeof payload?.stepIndex === 'number' ? payload.stepIndex : -1;
+                if (stepIndex < 0) return prev;
+                const nextSteps = prev.steps.map((step, idx) => {
+                    if (idx < stepIndex) return { ...step, status: 'done' };
+                    if (idx === stepIndex) return { ...step, status: 'active' };
+                    return step;
+                });
+                return { ...prev, steps: nextSteps, status: 'running' };
+            });
+        });
+        const subComplete = eventBus.subscribe(BioVizEvents.AI_PROCESS_COMPLETE, (payload) => {
+            setLiveActivity((prev) => {
+                if (!prev) return prev;
+                if (payload?.taskId && payload.taskId !== prev.taskId) return prev;
+                return {
+                    ...prev,
+                    steps: prev.steps.map((step) => ({ ...step, status: 'done' })),
+                    status: payload?.status === 'error' ? 'error' : 'done'
+                };
+            });
+        });
+
+        return () => {
+            eventBus.unsubscribe(BioVizEvents.AI_PROCESS_START, subStart);
+            eventBus.unsubscribe(BioVizEvents.AI_PROCESS_UPDATE, subUpdate);
+            eventBus.unsubscribe(BioVizEvents.AI_PROCESS_COMPLETE, subComplete);
+        };
+    }, [t]);
+
     const dismissSuggestion = (id: string) => {
         setSuggestions((prev) =>
             prev.map((s) => (s.id === id ? { ...s, dismissed: true } : s))
@@ -341,6 +395,30 @@ export const AIEventPanel: React.FC<AIEventPanelProps> = ({
 
             {!isMinimized && (
                 <div className="ai-event-list">
+                    {liveActivity && (
+                        <div className="live-activity">
+                            <div className="live-activity-header">
+                                <span className="live-activity-title">⚡ {liveActivity.taskName}</span>
+                                <span className={`live-activity-status ${liveActivity.status}`}>
+                                    {liveActivity.status === 'done'
+                                        ? t('Completed')
+                                        : liveActivity.status === 'error'
+                                            ? t('Failed')
+                                            : t('In progress')}
+                                </span>
+                            </div>
+                            <div className="live-activity-steps">
+                                {liveActivity.steps.map((step, idx) => (
+                                    <div key={`${step.label}-${idx}`} className={`live-step ${step.status}`}>
+                                        <span className="live-step-icon">
+                                            {step.status === 'done' ? '✅' : step.status === 'active' ? '⏳' : '•'}
+                                        </span>
+                                        <span className="live-step-label">{step.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {/* Skills Cards */}
                     <div className="ai-skills-section">
                         <div className="skills-label">{t('Skills')}</div>

@@ -396,6 +396,12 @@
     color: #b7f5dd;
 }
 
+.meta-pill.algorithm-badge {
+    background: rgba(139, 92, 246, 0.12);
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #e9d5ff;
+}
+
 .meta-sub {
     font-size: 12px;
     color: var(--text-dim);
@@ -403,6 +409,105 @@
 
 .enrichment-results {
     margin-top: 12px;
+}
+
+.enrichment-summary-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: #c7d2fe;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.summary-banner-icon {
+    font-size: 14px;
+}
+
+.summary-banner-action {
+    margin-left: auto;
+    background: rgba(99, 102, 241, 0.25);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    color: #e0e7ff;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.summary-banner-action:hover {
+    background: rgba(99, 102, 241, 0.35);
+}
+
+.enrichment-summary-modal {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(8, 10, 16, 0.7);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 12px;
+    padding: 12px;
+    backdrop-filter: blur(6px);
+    position: sticky;
+}
+
+.summary-modal-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 320px;
+    overflow: auto;
+    padding-right: 8px;
+}
+
+.summary-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.summary-modal-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e0e7ff;
+}
+
+.summary-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #e2e8f0;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+}
+
+.summary-modal-close:hover {
+    background: rgba(148, 163, 184, 0.15);
+}
+
+.summary-modal-body {
+    font-size: 12px;
+    color: #cbd5e1;
+    line-height: 1.6;
+}
+
+.summary-modal-body p {
+    margin-bottom: 8px;
+}
+
+.summary-modal-body p:last-child {
+    margin-bottom: 0;
 }
 
 .results-header h4 {
@@ -571,6 +676,8 @@
     overflow: hidden;
     backdrop-filter: blur(5px);
     animation: fadeIn 0.4s ease-out;
+    position: relative;
+    z-index: 2;
 }
 
 .report-header {

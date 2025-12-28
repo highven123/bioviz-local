@@ -24,6 +24,30 @@
     letter-spacing: 0.5px;
 }
 
+.summary-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.summary-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.summary-chip-icon {
+    font-size: 12px;
+}
+
 .summary-stats-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -71,4 +95,33 @@
     color: #94a3b8;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.summary-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.efficiency-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #facc15;
+    background: rgba(250, 204, 21, 0.12);
+    border: 1px solid rgba(250, 204, 21, 0.25);
+    padding: 6px 10px;
+    border-radius: 10px;
+}
+
+.algorithmic-badge {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
 }

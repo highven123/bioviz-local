@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useBioEngine } from '../hooks/useBioEngine';
 import GmtUploader from './GmtUploader';
 import UpSetPlot from './UpSetPlot';
 import './EnrichmentPanel.css';
 import { useI18n } from '../i18n';
+import { eventBus, BioVizEvents } from '../stores/eventBus';
 
 interface EnrichmentPanelProps {
     volcanoData?: any[];
     filePath?: string;
     multiSampleSets?: Array<{ label: string; genes: string[] }>;
+    summary?: string;
     onEnrichmentComplete?: (results: any) => void;
     onPathwayClick?: (pathwayId: string, source: string, metadata?: { pathway_name?: string; hit_genes?: string[] }) => void;
 }
@@ -24,10 +26,20 @@ interface EnrichmentResult {
     overlap_ratio: string;
 }
 
+const ENRICHMENT_DEFAULTS = {
+    p_cutoff: 0.05,
+    fdr_method: 'fdr_bh',
+    min_overlap: 3,
+    min_size: 5,
+    max_size: 500,
+    permutation_num: 1000
+};
+
 export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
     volcanoData,
     filePath,
     multiSampleSets = [],
+    summary: summaryFromProps,
     onEnrichmentComplete,
     onPathwayClick
 }) => {
@@ -41,6 +53,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
     const [results, setResults] = useState<EnrichmentResult[]>([]);
     const [intelligenceReport, setIntelligenceReport] = useState<any>(null);
     const [summary, setSummary] = useState<string | null>(null);
+    const [isSummaryOpen, setIsSummaryOpen] = useState(false);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
     const [metadata, setMetadata] = useState<any | null>(null);
@@ -48,6 +61,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
     const [upsetSource, setUpsetSource] = useState<'current' | 'fusion' | 'multisample'>('current');
     const [upsetMaxSets, setUpsetMaxSets] = useState(3);
     const [upsetSelection, setUpsetSelection] = useState<string[]>([]);
+    const summaryRef = useRef<HTMLDivElement>(null);
 
     // Static list - could be dynamic from backend in future
     const availableSources = [
@@ -60,6 +74,8 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
     ];
 
     const [customGmtPath, setCustomGmtPath] = useState<string | null>(null);
+    const activeProcessRef = React.useRef<string | null>(null);
+    const processTimersRef = React.useRef<ReturnType<typeof setTimeout>[]>([]);
 
     // Extract genes from volcano data
     const getGeneList = () => {
@@ -79,6 +95,26 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
             ranking[d.gene] = score;
         });
         return ranking;
+    };
+
+    const clearProcessTimers = () => {
+        processTimersRef.current.forEach((id) => clearTimeout(id));
+        processTimersRef.current = [];
+    };
+
+    const buildProcessSteps = () => {
+        if (geneSetSource === 'fusion') {
+            return [
+                t('Merging multi-source gene sets...'),
+                t('Deduplicating overlapping terms...'),
+                t('FDR adjustment (BH-FDR)...')
+            ];
+        }
+        return [
+            t('Extracting signature...'),
+            t('Hypergeometric test...'),
+            t('FDR adjustment (BH-FDR)...')
+        ];
     };
 
     // Handle response
@@ -114,6 +150,14 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                     message: lastResponse.message || t('Enrichment analysis failed')
                 });
             }
+            if (activeProcessRef.current) {
+                eventBus.emit(BioVizEvents.AI_PROCESS_COMPLETE, {
+                    taskId: activeProcessRef.current,
+                    status: lastResponse.status === 'ok' ? 'success' : 'error'
+                });
+                activeProcessRef.current = null;
+                clearProcessTimers();
+            }
         } else if (lastResponse.cmd === 'ENRICH_FUSION_RUN') {
             setIsLoading(false);
             if (lastResponse.status === 'ok') {
@@ -147,24 +191,36 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
             } else {
                 setFeedback({ type: 'error', message: lastResponse.message || t('Fusion analysis failed') });
             }
+            if (activeProcessRef.current) {
+                eventBus.emit(BioVizEvents.AI_PROCESS_COMPLETE, {
+                    taskId: activeProcessRef.current,
+                    status: lastResponse.status === 'ok' ? 'success' : 'error'
+                });
+                activeProcessRef.current = null;
+                clearProcessTimers();
+            }
         } else if (lastResponse.cmd === 'SUMMARIZE_ENRICHMENT') {
             setIsSummarizing(false);
             if (lastResponse.status === 'ok') {
                 setSummary(lastResponse.summary || null);
+                onEnrichmentComplete?.(lastResponse);
             }
         }
     }, [lastResponse, method]);
 
-    const runParameters = {
-        p_cutoff: 0.05,
-        fdr_method: 'fdr_bh',
-        min_overlap: 3,
-        min_size: 5,
-        max_size: 500,
-        permutation_num: 1000
-    };
-    const resolvedPCutoff = Number(metadata?.parameters?.p_cutoff ?? runParameters.p_cutoff) || runParameters.p_cutoff;
-    const resolvedFdrMethod = (metadata?.parameters?.fdr_method || runParameters.fdr_method) as string;
+    useEffect(() => {
+        const resolvedSummary = summary || summaryFromProps;
+        if (!resolvedSummary) return;
+        const timer = window.setTimeout(() => {
+            summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+        return () => window.clearTimeout(timer);
+    }, [summary, summaryFromProps]);
+
+    const displaySummary = summary || summaryFromProps || null;
+
+    const resolvedPCutoff = Number(metadata?.parameters?.p_cutoff ?? ENRICHMENT_DEFAULTS.p_cutoff) || ENRICHMENT_DEFAULTS.p_cutoff;
+    const resolvedFdrMethod = (metadata?.parameters?.fdr_method || ENRICHMENT_DEFAULTS.fdr_method) as string;
 
     const generateSummary = async (enrichmentResults: EnrichmentResult[]) => {
         setIsSummarizing(true);
@@ -236,13 +292,29 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
         setMetadata(null);
 
         try {
+            clearProcessTimers();
+            const taskId = `enrich_${Date.now()}`;
+            const steps = buildProcessSteps();
+            activeProcessRef.current = taskId;
+            eventBus.emit(BioVizEvents.AI_PROCESS_START, {
+                taskId,
+                taskName: t('Enrichment Analysis'),
+                steps
+            });
+            processTimersRef.current.push(setTimeout(() => {
+                eventBus.emit(BioVizEvents.AI_PROCESS_UPDATE, { taskId, stepIndex: 1 });
+            }, 600));
+            processTimersRef.current.push(setTimeout(() => {
+                eventBus.emit(BioVizEvents.AI_PROCESS_UPDATE, { taskId, stepIndex: 2 });
+            }, 1400));
+
             if (geneSetSource === 'fusion') {
                 await sendCommand('ENRICH_FUSION_RUN', {
                     method,
                     genes,
                     sources: ['reactome', 'kegg', 'wikipathways', 'go_bp'],
                     species,
-                    parameters: runParameters,
+                    parameters: ENRICHMENT_DEFAULTS,
                     file_path: filePath
                 });
             } else {
@@ -252,7 +324,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                     gene_set_source: geneSetSource,
                     species,
                     custom_gmt_path: geneSetSource === 'custom' ? customGmtPath : undefined,
-                    parameters: runParameters,
+                    parameters: ENRICHMENT_DEFAULTS,
                     file_path: filePath
                 });
             }
@@ -262,6 +334,14 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 message: `Failed to run enrichment: ${err}`
             });
             setIsLoading(false);
+            if (activeProcessRef.current) {
+                eventBus.emit(BioVizEvents.AI_PROCESS_COMPLETE, {
+                    taskId: activeProcessRef.current,
+                    status: 'error'
+                });
+                activeProcessRef.current = null;
+                clearProcessTimers();
+            }
         }
     };
 
@@ -359,6 +439,86 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 </div>
             )}
 
+            {displaySummary && (
+                <div className="enrichment-summary-banner">
+                    <span className="summary-banner-icon">🤖</span>
+                    <span className="summary-banner-text">{t('AI summary ready')}</span>
+                    <button
+                        className="summary-banner-action"
+                        onClick={() => {
+                            setIsSummaryOpen(true);
+                            summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                    >
+                        {t('View summary')}
+                    </button>
+                </div>
+            )}
+
+            {displaySummary && isSummaryOpen && (
+                <div className="enrichment-summary-modal">
+                    <button
+                        className="summary-modal-close"
+                        onClick={() => setIsSummaryOpen(false)}
+                        type="button"
+                        aria-label={t('Close')}
+                    >
+                        ×
+                    </button>
+                    <div className="summary-modal-content">
+                        <div className="summary-modal-header">
+                            <span className="summary-modal-title">🤖 {t('AI Deep Insight Report')}</span>
+                        </div>
+                        <div className="summary-modal-body">
+                            {displaySummary.split('\n').map((line, i) => (
+                                <p key={i}>{line}</p>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Summary Report */}
+            {(isSummarizing || displaySummary) && (
+                <div className="enrichment-summary-report ai-report" ref={summaryRef}>
+                    <div className="report-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span className="report-icon">🤖</span>
+                            <h4>{t('AI Deep Insight Report')}</h4>
+                        </div>
+                        {intelligenceReport && (
+                            <button
+                                className="studio-report-btn"
+                                onClick={() => (onEnrichmentComplete as any)?.({
+                                    type: 'TOGGLE_STUDIO_VIEW',
+                                    data: intelligenceReport
+                                })}
+                                style={{
+                                    padding: '4px 10px',
+                                    fontSize: '11px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--brand-primary)',
+                                    background: 'rgba(99, 102, 241, 0.1)',
+                                    color: 'var(--brand-primary)',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                🔍 {t('Full Studio Report')}
+                            </button>
+                        )}
+                        {isSummarizing && <div className="typing-dots"><span>.</span><span>.</span><span>.</span></div>}
+                    </div>
+                    {displaySummary && (
+                        <div className="report-content">
+                            {displaySummary.split('\n').map((line, i) => (
+                                <p key={i}>{line}</p>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Info */}
             <div className="enrichment-info">
                 <span>📊 {volcanoData?.length || 0} genes loaded</span>
@@ -371,6 +531,12 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                     <span className="meta-pill primary">
                         {availableSources.find(s => s.id === geneSetSource)?.name || geneSetSource}
                         {metadata?.gene_set_version ? ` • ${metadata.gene_set_version}` : ` • ${t('cache pending')}`}
+                    </span>
+                    <span
+                        className="meta-pill algorithm-badge"
+                        title={t('Hypergeometric Test with Benjamini-Hochberg FDR correction')}
+                    >
+                        📐 {t('Hypergeometric Test + BH-FDR')}
                     </span>
                     <span className="meta-pill">
                         {t('Species')}: {metadata?.input_summary?.species || species}
@@ -474,86 +640,45 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 </div>
             )}
 
-            {/* AI Summary Report */}
-            {(isSummarizing || summary) && (
-                <div className="enrichment-summary-report ai-report">
-                    <div className="report-header">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span className="report-icon">🤖</span>
-                            <h4>{t('AI Deep Insight Report')}</h4>
-                        </div>
-                        {intelligenceReport && (
-                            <button
-                                className="studio-report-btn"
-                                onClick={() => (onEnrichmentComplete as any)?.({
-                                    type: 'TOGGLE_STUDIO_VIEW',
-                                    data: intelligenceReport
-                                })}
-                                style={{
-                                    padding: '4px 10px',
-                                    fontSize: '11px',
-                                    borderRadius: '6px',
-                                    border: '1px solid var(--brand-primary)',
-                                    background: 'rgba(99, 102, 241, 0.1)',
-                                    color: 'var(--brand-primary)',
-                                    cursor: 'pointer',
-                                    fontWeight: 'bold'
-                                }}
-                            >
-                                🔍 {t('Full Studio Report')}
-                            </button>
-                        )}
-                        {isSummarizing && <div className="typing-dots"><span>.</span><span>.</span><span>.</span></div>}
-                    </div>
-                    {summary && (
-                        <div className="report-content">
-                            {summary.split('\n').map((line, i) => (
-                                <p key={i}>{line}</p>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
             {/* Results */}
             {results.length > 0 && (
                 <div className="enrichment-results">
                     <div className="results-header">
                         <h4>{t('Top Enriched Pathways')} ({results.length})</h4>
-                            <div className="results-actions">
-                                <div className="results-source">
-                                    <label>{t('UpSet Source')}</label>
-                                    <select
-                                        value={upsetSource}
-                                        onChange={(e) => setUpsetSource(e.target.value as any)}
-                                    >
-                                        <option value="current">{t('Current')}</option>
-                                        <option value="fusion">{t('Fusion')}</option>
-                                        <option value="multisample" disabled={!multiSampleSets.length}>{t('MultiSample')}</option>
-                                    </select>
-                                </div>
-                                <div className="results-source">
-                                    <label>{t('Max Sets')}</label>
-                                    <select
-                                        value={upsetMaxSets}
-                                        onChange={(e) => setUpsetMaxSets(Number(e.target.value))}
-                                    >
-                                        <option value={2}>2</option>
-                                        <option value={3}>3</option>
-                                        <option value={4}>4</option>
-                                    </select>
-                                </div>
-                                <div className="results-source">
-                                    <button
-                                        className="clear-btn"
-                                        type="button"
-                                        onClick={() => setUpsetSelection([])}
-                                        disabled={upsetSelection.length === 0}
-                                    >
-                                        {t('Clear')}
-                                    </button>
-                                </div>
-                                <div className="results-toggle">
+                        <div className="results-actions">
+                            <div className="results-source">
+                                <label>{t('UpSet Source')}</label>
+                                <select
+                                    value={upsetSource}
+                                    onChange={(e) => setUpsetSource(e.target.value as any)}
+                                >
+                                    <option value="current">{t('Current')}</option>
+                                    <option value="fusion">{t('Fusion')}</option>
+                                    <option value="multisample" disabled={!multiSampleSets.length}>{t('MultiSample')}</option>
+                                </select>
+                            </div>
+                            <div className="results-source">
+                                <label>{t('Max Sets')}</label>
+                                <select
+                                    value={upsetMaxSets}
+                                    onChange={(e) => setUpsetMaxSets(Number(e.target.value))}
+                                >
+                                    <option value={2}>2</option>
+                                    <option value={3}>3</option>
+                                    <option value={4}>4</option>
+                                </select>
+                            </div>
+                            <div className="results-source">
+                                <button
+                                    className="clear-btn"
+                                    type="button"
+                                    onClick={() => setUpsetSelection([])}
+                                    disabled={upsetSelection.length === 0}
+                                >
+                                    {t('Clear')}
+                                </button>
+                            </div>
+                            <div className="results-toggle">
                                 <button
                                     className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
                                     onClick={() => setViewMode('table')}
@@ -598,15 +723,15 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                                         const { writeTextFile } = await import('@tauri-apps/plugin-fs');
 
                                         const defaultName = `enrichment_${geneSetSource}_${new Date().toISOString().slice(0, 10)}.csv`;
-                                        const filePath = await save({
+                                        const selectedPath = await save({
                                             defaultPath: defaultName,
                                             filters: [{ name: 'CSV', extensions: ['csv'] }]
                                         });
 
-                                        if (filePath) {
-                                            await writeTextFile(filePath, csvContent);
-                                            console.log('[Export] File saved to:', filePath);
-                                            setFeedback({ type: 'success', message: `Results exported to: ${filePath}` });
+                                        if (selectedPath) {
+                                            await writeTextFile(selectedPath, csvContent);
+                                            console.log('[Export] File saved to:', selectedPath);
+                                            setFeedback({ type: 'success', message: `Results exported to: ${selectedPath}` });
                                         } else {
                                             console.log('[Export] User cancelled save dialog');
                                         }
@@ -653,100 +778,100 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                             <UpSetPlot sets={buildUpSetSets()} height={240} />
                         </div>
                     ) : (
-                    <div className="results-table-container">
-                        <table className="results-table">
-                            <thead>
-                                <tr>
-                                    <th>{t('Pathway / Module')}</th>
-                                    <th>{t('P-value')}</th>
-                                    <th>{t('FDR')}</th>
-                                    {method === 'ORA' && <th>{t('Odds Ratio')}</th>}
-                                    {method === 'GSEA' && <th>{t('NES')}</th>}
-                                    <th>{geneSetSource === 'fusion' ? t('Sources') : t('Overlap')}</th>
-                                    <th>{t('Genes')}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {results.slice(0, 30).map((result: any, idx) => (
-                                    <React.Fragment key={idx}>
-                                        <tr className={result.isFused ? 'fusion-row-master' : ''}>
-                                            <td className="pathway-name">
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    {result.isFused && <span className="fusion-cluster-icon">💠</span>}
-                                                    <button
-                                                        className="pathway-link"
-                                                        onClick={() => {
-                                                            let pathwayId = result.pathway_id || result.pathway_name;
-                                                            let pathwayName = result.pathway_name;
+                        <div className="results-table-container">
+                            <table className="results-table">
+                                <thead>
+                                    <tr>
+                                        <th>{t('Pathway / Module')}</th>
+                                        <th>{t('P-value')}</th>
+                                        <th>{t('FDR')}</th>
+                                        {method === 'ORA' && <th>{t('Odds Ratio')}</th>}
+                                        {method === 'GSEA' && <th>{t('NES')}</th>}
+                                        <th>{geneSetSource === 'fusion' ? t('Sources') : t('Overlap')}</th>
+                                        <th>{t('Genes')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {results.slice(0, 30).map((result: any, idx) => (
+                                        <React.Fragment key={idx}>
+                                            <tr className={result.isFused ? 'fusion-row-master' : ''}>
+                                                <td className="pathway-name">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        {result.isFused && <span className="fusion-cluster-icon">💠</span>}
+                                                        <button
+                                                            className="pathway-link"
+                                                            onClick={() => {
+                                                                let pathwayId = result.pathway_id || result.pathway_name;
+                                                                let pathwayName = result.pathway_name;
 
-                                                            // ID Extraction logic... (kept same as before)
-                                                            if (pathwayName.includes('(GO:')) {
-                                                                const match = pathwayName.match(/\(GO:(\d+)\)/);
-                                                                if (match) pathwayId = `GO:${match[1]}`;
-                                                            } else if (pathwayName.match(/^GO:\d+/)) {
-                                                                pathwayId = pathwayName.split('_')[0];
-                                                            } else if (pathwayName.match(/^WP\d+/)) {
-                                                                pathwayId = pathwayName.split('_')[0];
-                                                            } else if (pathwayName.match(/^hsa\d+/)) {
-                                                                pathwayId = pathwayName.split(':')[0];
-                                                            }
+                                                                // ID Extraction logic... (kept same as before)
+                                                                if (pathwayName.includes('(GO:')) {
+                                                                    const match = pathwayName.match(/\(GO:(\d+)\)/);
+                                                                    if (match) pathwayId = `GO:${match[1]}`;
+                                                                } else if (pathwayName.match(/^GO:\d+/)) {
+                                                                    pathwayId = pathwayName.split('_')[0];
+                                                                } else if (pathwayName.match(/^WP\d+/)) {
+                                                                    pathwayId = pathwayName.split('_')[0];
+                                                                } else if (pathwayName.match(/^hsa\d+/)) {
+                                                                    pathwayId = pathwayName.split(':')[0];
+                                                                }
 
-                                                            onPathwayClick?.(pathwayId, result.source || geneSetSource, {
-                                                                pathway_name: pathwayName,
-                                                                hit_genes: result.hit_genes || []
-                                                            });
-                                                        }}
-                                                    >
-                                                        {result.pathway_name}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td>{result.p_value.toExponential(2)}</td>
-                                            <td className={result.fdr < 0.05 ? 'significant-fdr' : ''}>
-                                                {result.fdr.toFixed(4)}
-                                            </td>
-                                            {method === 'ORA' && <td>{result.odds_ratio?.toFixed(2) || t('n/a')}</td>}
-                                            {method === 'GSEA' && <td>{result.nes?.toFixed(2) || t('n/a')}</td>}
-                                            <td>
-                                                {result.isFused ? (
-                                                    <div className="source-badges">
-                                                        {Array.from(new Set(result.members?.map((m: any) => m.source) || [])).map((s: any) => (
-                                                            <span key={s} className={`source-badge badge-${s}`}>{s[0].toUpperCase()}</span>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    result.overlap_ratio
-                                                )}
-                                            </td>
-                                            <td className="hit-genes">
-                                                {(result.hit_genes || []).slice(0, 5).join(', ')}
-                                                {(result.hit_genes || []).length > 5 && '...'}
-                                            </td>
-                                        </tr>
-                                        {/* Drill-down view for Fusion Results */}
-                                        {result.isFused && result.members && result.members.length > 1 && (
-                                            <tr className="fusion-drilldown-row">
-                                                <td colSpan={7}>
-                                                    <div className="fusion-members-container">
-                                                        <div className="fusion-members-label">{t('Consolidated Terms')}:</div>
-                                                        <div className="fusion-members-list">
-                                                            {result.members.map((m: any, midx: number) => (
-                                                                <div key={midx} className="fusion-member-item">
-                                                                    <span className={`source-tag tag-${m.source}`}>{m.source}</span>
-                                                                    <span className="member-name">{m.pathway_name}</span>
-                                                                    <span className="member-stats">{t('FDR')}: {m.fdr?.toFixed(4)} | {t('Overlap')}: {m.overlap_ratio}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                                onPathwayClick?.(pathwayId, result.source || geneSetSource, {
+                                                                    pathway_name: pathwayName,
+                                                                    hit_genes: result.hit_genes || []
+                                                                });
+                                                            }}
+                                                        >
+                                                            {result.pathway_name}
+                                                        </button>
                                                     </div>
                                                 </td>
+                                                <td>{result.p_value.toExponential(2)}</td>
+                                                <td className={result.fdr < 0.05 ? 'significant-fdr' : ''}>
+                                                    {result.fdr.toFixed(4)}
+                                                </td>
+                                                {method === 'ORA' && <td>{result.odds_ratio?.toFixed(2) || t('n/a')}</td>}
+                                                {method === 'GSEA' && <td>{result.nes?.toFixed(2) || t('n/a')}</td>}
+                                                <td>
+                                                    {result.isFused ? (
+                                                        <div className="source-badges">
+                                                            {Array.from(new Set(result.members?.map((m: any) => m.source) || [])).map((s: any) => (
+                                                                <span key={s} className={`source-badge badge-${s}`}>{s[0].toUpperCase()}</span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        result.overlap_ratio
+                                                    )}
+                                                </td>
+                                                <td className="hit-genes">
+                                                    {(result.hit_genes || []).slice(0, 5).join(', ')}
+                                                    {(result.hit_genes || []).length > 5 && '...'}
+                                                </td>
                                             </tr>
-                                        )}
-                                    </React.Fragment>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                            {/* Drill-down view for Fusion Results */}
+                                            {result.isFused && result.members && result.members.length > 1 && (
+                                                <tr className="fusion-drilldown-row">
+                                                    <td colSpan={7}>
+                                                        <div className="fusion-members-container">
+                                                            <div className="fusion-members-label">{t('Consolidated Terms')}:</div>
+                                                            <div className="fusion-members-list">
+                                                                {result.members.map((m: any, midx: number) => (
+                                                                    <div key={midx} className="fusion-member-item">
+                                                                        <span className={`source-tag tag-${m.source}`}>{m.source}</span>
+                                                                        <span className="member-name">{m.pathway_name}</span>
+                                                                        <span className="member-stats">{t('FDR')}: {m.fdr?.toFixed(4)} | {t('Overlap')}: {m.overlap_ratio}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
             )}
