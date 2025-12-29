@@ -2,7 +2,7 @@ import os
 import sys
 from openai import OpenAI
 
-api_key = "sk-placeholder"
+api_key = "sk-placeholder" # DO NOT HARDCODE KEYS. LOAD FROM .env OR ENV VARS.
 
 def test_deepseek():
     print(f"Testing DeepSeek Official API with key: {api_key[:6]}...")

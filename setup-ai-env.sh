@@ -7,12 +7,12 @@ echo "Setting up BioViz AI configuration..."
 echo "" >> ~/.zshrc
 echo "# BioViz AI Configuration (Alibaba Cloud Bailian)" >> ~/.zshrc
 echo "export AI_PROVIDER='bailian'" >> ~/.zshrc
-echo "export DASHSCOPE_API_KEY='sk-placeholder'" >> ~/.zshrc
+echo "export DASHSCOPE_API_KEY='your-actual-api-key-here'" >> ~/.zshrc
 echo "export DEEPSEEK_MODEL='deepseek-v3.2-exp'" >> ~/.zshrc
 
 # Apply changes to current session
 export AI_PROVIDER='bailian'
-export DASHSCOPE_API_KEY='sk-placeholder'
+export DASHSCOPE_API_KEY='your-actual-api-key-here'
 export DEEPSEEK_MODEL='deepseek-v3.2-exp'
 
 echo "✅ Configuration added to ~/.zshrc"
