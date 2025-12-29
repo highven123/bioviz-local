@@ -27,25 +27,26 @@ export const UpSetPlot: React.FC<UpSetPlotProps> = ({ sets, height = 220 }) => {
     const data = useMemo(() => {
         if (!sets.length) return [];
         const limited = sets.slice(0, 4);
-        const labels = limited.map((s, i) => String.fromCharCode(65 + i));
+        const labels = limited.map((_, i) => String.fromCharCode(65 + i));
         const genes = limited.map((s) => new Set(s.genes || []));
         const combos: { label: string; count: number; detail: string }[] = [];
 
         const totalMasks = (1 << genes.length) - 1;
         for (let mask = 1; mask <= totalMasks; mask += 1) {
             let intersection: Set<string> | null = null;
-            genes.forEach((gset, idx) => {
+            for (let idx = 0; idx < genes.length; idx++) {
                 if (mask & (1 << idx)) {
+                    const gset = genes[idx];
                     if (!intersection) {
                         intersection = new Set(gset);
                     } else {
-                        intersection = new Set([...intersection].filter((g) => gset.has(g)));
+                        intersection = new Set([...(intersection as Set<string>)].filter((g) => gset.has(g)));
                     }
                 }
-            });
+            }
             combos.push({
                 label: comboLabel(mask, labels),
-                count: intersection ? intersection.size : 0,
+                count: intersection ? (intersection as Set<string>).size : 0,
                 detail: comboLabel(mask, limited.map((s) => s.label))
             });
         }

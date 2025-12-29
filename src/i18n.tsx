@@ -245,7 +245,6 @@ const translations: Record<Language, Record<string, string>> = {
     'Hash': '哈希',
     'AI Deep Analysis': 'AI 深度分析',
     'AI Deep Analysis in progress': 'AI 深度分析中',
-    'Analyzing...': '分析中……',
     'Fusion results ready': '融合结果已就绪',
     'Analysis ready': '结果已就绪',
     'Fusion modules summarized': '融合模块将被总结',
@@ -827,7 +826,7 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 const formatVars = (text: string, vars?: Record<string, string | number>) => {
   if (!vars) return text;
   return Object.entries(vars).reduce(
-    (acc, [key, value]) => acc.replaceAll(`{${key}}`, String(value)),
+    (acc, [key, value]) => acc.replace(new RegExp(`\\{${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`, 'g'), String(value)),
     text
   );
 };
@@ -861,7 +860,7 @@ export const useI18n = () => {
     console.warn('useI18n must be used within LanguageProvider');
     return {
       lang: 'en' as Language,
-      setLang: () => {},
+      setLang: () => { },
       t: (key: string, vars?: Record<string, string | number>) => {
         const table = translations.en || {};
         const translated = table[key] ?? key;

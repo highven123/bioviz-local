@@ -264,10 +264,10 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
                     formatter: (params: any) => {
                         const [x, y, gene, status] = params.data;
                         return renderTooltip(String(gene || ''), [
-            `${t('Log2FC')}: ${x}`,
-            `${t('-Log10(P)')}: ${y}`,
-            `${t('Status')}: ${status}`
-        ]);
+                            `${t('Log2FC')}: ${x}`,
+                            `${t('-Log10(P)')}: ${y}`,
+                            `${t('Status')}: ${status}`
+                        ]);
                     }
                 },
                 grid: {
@@ -504,11 +504,11 @@ export const VolcanoPlot: React.FC<VolcanoPlotProps> = ({
         const chart = chartInstance.current;
         if (!chart) return;
 
-        const grid = chart.getModel().getComponent('grid')?.coordinateSystem?.getRect?.();
+        const grid = (chart as any).getModel().getComponent('grid')?.coordinateSystem?.getRect?.();
         if (!grid) return;
 
-        const xAxis = chart.getModel().getComponent('xAxis', 0)?.axis;
-        const yAxis = chart.getModel().getComponent('yAxis', 0)?.axis;
+        const xAxis = (chart as any).getModel().getComponent('xAxis', 0)?.axis;
+        const yAxis = (chart as any).getModel().getComponent('yAxis', 0)?.axis;
         if (!xAxis || !yAxis) return;
 
         const [xMin, xMax] = xAxis.scale.getExtent();

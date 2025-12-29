@@ -136,7 +136,7 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                 setIntelligenceReport(lastResponse.intelligence_report || null);
                 setMetadata(lastResponse.metadata || null);
                 setFusionStats(null);
-                const elapsed = Number(lastResponse?.metadata?.elapsed_time ?? lastResponse?.metadata?.runtime);
+                const elapsed = Number((lastResponse as any)?.metadata?.elapsed_time ?? (lastResponse as any)?.metadata?.runtime);
                 setRunTimeSec(Number.isFinite(elapsed) ? elapsed : null);
                 const warnings = (lastResponse.warnings || []) as string[];
                 setFeedback({
@@ -187,13 +187,13 @@ export const EnrichmentPanel: React.FC<EnrichmentPanelProps> = ({
                     original: Number(lastResponse.total_original_terms || 0),
                     modules: Number(lastResponse.total_modules || 0)
                 });
-                const elapsed = Number(lastResponse?.metadata?.elapsed_time ?? lastResponse?.metadata?.runtime);
+                const elapsed = Number((lastResponse as any)?.metadata?.elapsed_time ?? (lastResponse as any)?.metadata?.runtime);
                 setRunTimeSec(Number.isFinite(elapsed) ? elapsed : null);
                 setFeedback({
                     type: 'success',
                     message: t('Fusion complete. Consolidated {terms} terms into {modules} biological modules.', {
-                        terms: lastResponse.total_original_terms,
-                        modules: lastResponse.total_modules
+                        terms: String((lastResponse as any).total_original_terms || 0),
+                        modules: String((lastResponse as any).total_modules || 0)
                     })
                 });
 

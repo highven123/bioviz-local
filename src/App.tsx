@@ -164,7 +164,6 @@ function App() {
   const [leftView, setLeftView] = useState<'chart' | 'table'>('chart');
   const [rightPanelView, setRightPanelView] = useState<'ai-chat' | 'images' | 'multi-sample' | 'de-analysis' | 'enrichment' | 'narrative' | 'singlecell' | 'data-explorer'>('ai-chat');
   const [mainView, setMainView] = useState<'pathway' | 'intelligence' | 'ai-insights'>('ai-insights');
-  const [lastMainView, setLastMainView] = useState<'pathway' | 'intelligence' | 'ai-insights'>('pathway');
   const [workflowPhase, setWorkflowPhase] = useState<'perception' | 'exploration' | 'synthesis'>('perception');
   const [explorationTool, setExplorationTool] = useState<'de-analysis' | 'enrichment' | 'multi-sample' | 'singlecell' | 'images'>('de-analysis');
   const [studioIntelligence, setStudioIntelligence] = useState<any>(null);
@@ -860,7 +859,6 @@ function App() {
     // Handle custom Studio Toggle action from AI Deep Insight
     if (res?.type === 'TOGGLE_STUDIO_VIEW') {
       setStudioIntelligence(res.data);
-      setLastMainView(mainView);
       setMainView('intelligence');
       return;
     }
